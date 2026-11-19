@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="1">
+    <section id="script.screensemble">
+        <category id="connection" label="Connection">
+            <group id="1" label="Server">
+                <setting id="server_address" type="string" label="Server address">
+                    <level>0</level>
+                    <default></default>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="device_name" type="string" label="Device name">
+                    <level>0</level>
+                    <default></default>
+                    <control type="edit" format="string"/>
+                </setting>
+            </group>
+        </category>
+        <category id="idle" label="Idle Presentation">
+            <group id="1" label="Fallback">
+                <setting id="idle_fallback_color" type="string" label="Fallback color (hex RGB)">
+                    <level>0</level>
+                    <default>#000000</default>
+                    <control type="edit" format="string"/>
+                </setting>
+            </group>
+        </category>
+    </section>
+</settings>

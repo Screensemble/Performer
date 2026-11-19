@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="script.screensemble"
+       name="Screensemble Player"
+       version="0.1.0"
+       provider-name="Screensemble">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+    </requires>
+    <extension point="xbmc.service" library="service.py"/>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Screensemble signage player</summary>
+        <description lang="en_GB">Self-contained digital signage player for the Screensemble synchronized multi-display system. Runs standalone, or connects to a Screensemble server for managed and controlled playback. See screensemble-design-spec.md.</description>
+        <platform>all</platform>
+    </extension>
+</addon>
