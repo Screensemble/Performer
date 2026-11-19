@@ -42,6 +42,13 @@ def main():
         pick(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 0)
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "command":
+        # Settings action buttons -> signal the running service, then close
+        # the settings dialog so the result is visible immediately.
+        HOME.setProperty(COMMAND_PROPERTY, sys.argv[2])
+        xbmc.executebuiltin("Dialog.Close(all,true)")
+        return
+
     from wizard import run_wizard
 
     if not ADDON.getSettingBool("setup_complete"):

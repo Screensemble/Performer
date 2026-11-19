@@ -168,3 +168,15 @@ msgstr ""
 msgctxt "#30064"
 msgid "Browse test video…"
 msgstr ""
+
+msgctxt "#30065"
+msgid "Play test video now"
+msgstr ""
+
+msgctxt "#30066"
+msgid "Stop playback"
+msgstr ""
+
+msgctxt "#30067"
+msgid "Restart local content"
+msgstr ""

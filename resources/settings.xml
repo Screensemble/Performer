@@ -164,6 +164,21 @@
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
+                <setting id="poc_play" type="action" label="30065">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,command,play_test)</data>
+                </setting>
+                <setting id="poc_stop" type="action" label="30066">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,command,stop)</data>
+                </setting>
+                <setting id="poc_restart" type="action" label="30067">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,command,restart)</data>
+                </setting>
             </group>
         </category>
     </section>
