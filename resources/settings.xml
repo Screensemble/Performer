@@ -16,11 +16,71 @@
             </group>
         </category>
         <category id="idle" label="Idle Presentation">
-            <group id="1" label="Fallback">
-                <setting id="idle_fallback_color" type="string" label="Fallback color (hex RGB)">
+            <group id="1" label="Engine (PoC comparison)">
+                <setting id="idle_engine" type="integer" label="Idle engine">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <options>
+                            <option label="Dedicated window (WindowXML)">0</option>
+                            <option label="ShowPicture builtin (comparison)">1</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+            </group>
+            <group id="2" label="Presentation">
+                <setting id="idle_type" type="integer" label="Type">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <options>
+                            <option label="Solid color">0</option>
+                            <option label="Static image">1</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+                <setting id="idle_color" type="string" label="Idle color (hex RGB)">
                     <level>0</level>
                     <default>#000000</default>
                     <control type="edit" format="string"/>
+                </setting>
+                <setting id="idle_image" type="string" label="Idle image">
+                    <level>0</level>
+                    <default></default>
+                    <control type="button" format="file"/>
+                </setting>
+                <setting id="idle_scaling" type="integer" label="Scaling">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <options>
+                            <option label="Contain">0</option>
+                            <option label="Cover">1</option>
+                            <option label="Stretch">2</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+                <setting id="letterbox_color" type="string" label="Letterbox color (hex RGB)">
+                    <level>0</level>
+                    <default>#000000</default>
+                    <control type="edit" format="string"/>
+                </setting>
+            </group>
+        </category>
+        <category id="poc" label="PoC Testing">
+            <group id="1" label="Test playback">
+                <setting id="test_video" type="string" label="Test video">
+                    <level>0</level>
+                    <default></default>
+                    <control type="button" format="file"/>
+                </setting>
+                <setting id="poc_debug" type="boolean" label="Show debug overlay on idle">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
                 </setting>
             </group>
         </category>

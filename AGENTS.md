@@ -16,14 +16,17 @@ The governing design document is `../screensemble-design-spec.md` (in the parent
 ## Structure
 
 - `addon.xml` — addon manifest (id `script.screensemble`).
-- `service.py` — service entry point and monitor loop.
-- `resources/settings.xml` — addon settings (server address, device name, idle fallback color).
+- `service.py` — service entry point, monitor loop, playback callbacks, PoC test actions.
+- `idle.py` — idle rendering: `IdleWindow` (WindowXML), runtime PNG generation, setting helpers.
+- `resources/settings.xml` — addon settings (connection, idle presentation, PoC testing).
+- `resources/skins/Default/1080i/idle.xml` — fullscreen idle window layout.
 
 ## Development workflow
 
 - Install on a device by zipping the addon folder (Kodi → Install from zip). Do not commit the zip.
-- Kodi logs: `kodi.log` on the device; service logs are prefixed `[screensemble]`.
-- Target hardware for validation: TiVo Stream 4K (spec sections 11–12).
+- PoC install/test steps and pass/fail criteria: see `README.md`.
+- Kodi logs: `kodi.log` on the device; service logs are prefixed `[screensemble]` and timestamped with `time.perf_counter()` for transition-gap measurement.
+- Target hardware for validation: TiVo Stream 4K (spec sections 11–12); desktop Kodi is the current dev loop.
 
 ## Conventions
 
