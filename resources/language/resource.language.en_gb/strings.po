@@ -151,3 +151,20 @@ msgstr ""
 msgctxt "#30053"
 msgid "Show debug overlay on idle"
 msgstr ""
+
+# --- Browse buttons ---
+msgctxt "#30061"
+msgid "Browse media folder…"
+msgstr ""
+
+msgctxt "#30062"
+msgid "Browse cache folder…"
+msgstr ""
+
+msgctxt "#30063"
+msgid "Browse idle image…"
+msgstr ""
+
+msgctxt "#30064"
+msgid "Browse test video…"
+msgstr ""

@@ -27,7 +27,12 @@
                     <constraints>
                         <allowempty>true</allowempty>
                     </constraints>
-                    <control type="button" format="path"/>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="local_media_folder_browse" type="action" label="30061">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,pick,local_media_folder,0)</data>
                 </setting>
                 <setting id="slideshow_seconds" type="integer" label="30017">
                     <level>0</level>
@@ -47,7 +52,12 @@
                     <constraints>
                         <allowempty>true</allowempty>
                     </constraints>
-                    <control type="button" format="path"/>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="server_media_dir_browse" type="action" label="30062">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,pick,server_media_dir,0)</data>
                 </setting>
             </group>
         </category>
@@ -108,7 +118,12 @@
                     <constraints>
                         <allowempty>true</allowempty>
                     </constraints>
-                    <control type="button" format="image"/>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="idle_image_browse" type="action" label="30063">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,pick,idle_image,2)</data>
                 </setting>
                 <setting id="idle_scaling" type="integer" label="30041">
                     <level>0</level>
@@ -137,7 +152,12 @@
                     <constraints>
                         <allowempty>true</allowempty>
                     </constraints>
-                    <control type="button" format="file"/>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="test_video_browse" type="action" label="30064">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,pick,test_video,1)</data>
                 </setting>
                 <setting id="poc_debug" type="boolean" label="30053">
                     <level>0</level>

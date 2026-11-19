@@ -19,6 +19,7 @@ HOME = xbmcgui.Window(10000)
 
 COMMAND_PROPERTY = "screensemble.command"
 COMMAND_RESUME = "resume"
+COMMAND_RELOAD = "reload"
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts"}
@@ -51,23 +52,37 @@ def notify(text, icon=xbmcgui.NOTIFICATION_INFO):
 
 
 def load_config():
+    # Fresh Addon() every call: the long-lived instance caches settings and
+    # does NOT see writes made by the script entry point (e.g. pick()).
+    addon = xbmcaddon.Addon()
     return {
-        "setup_complete": ADDON.getSettingBool("setup_complete"),
-        "player_mode": ADDON.getSettingInt("player_mode"),      # 0=local 1=server
-        "server_address": ADDON.getSetting("server_address"),
-        "device_name": ADDON.getSetting("device_name"),
-        "local_media_folder": ADDON.getSetting("local_media_folder"),
-        "slideshow_seconds": ADDON.getSettingInt("slideshow_seconds") or 10,
-        "server_media_dir": ADDON.getSetting("server_media_dir"),
-        "idle_engine": ADDON.getSettingInt("idle_engine"),      # 0=window 1=picture
-        "idle_type": ADDON.getSettingInt("idle_type"),          # 0=color 1=image
-        "idle_color": ADDON.getSetting("idle_color") or "#000000",
-        "letterbox_color": ADDON.getSetting("letterbox_color") or "#000000",
-        "image_path": ADDON.getSetting("idle_image"),
-        "scaling": ADDON.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
-        "test_video": ADDON.getSetting("test_video"),
-        "debug_overlay": ADDON.getSettingBool("poc_debug"),
+        "setup_complete": addon.getSettingBool("setup_complete"),
+        "player_mode": addon.getSettingInt("player_mode"),      # 0=local 1=server
+        "server_address": addon.getSetting("server_address"),
+        "device_name": addon.getSetting("device_name"),
+        "local_media_folder": addon.getSetting("local_media_folder"),
+        "slideshow_seconds": addon.getSettingInt("slideshow_seconds") or 10,
+        "server_media_dir": addon.getSetting("server_media_dir"),
+        "idle_engine": addon.getSettingInt("idle_engine"),      # 0=window 1=picture
+        "idle_type": addon.getSettingInt("idle_type"),          # 0=color 1=image
+        "idle_color": addon.getSetting("idle_color") or "#000000",
+        "letterbox_color": addon.getSetting("letterbox_color") or "#000000",
+        "image_path": addon.getSetting("idle_image"),
+        "scaling": addon.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
+        "test_video": addon.getSetting("test_video"),
+        "debug_overlay": addon.getSettingBool("poc_debug"),
     }
+
+
+class SettingsMonitor(xbmc.Monitor):
+    """Flags addon settings changes so the loop can apply them live."""
+
+    def __init__(self):
+        super().__init__()
+        self.dirty = False
+
+    def onSettingsChanged(self):
+        self.dirty = True
 
 
 class SignagePlayer(xbmc.Player):
@@ -110,6 +125,7 @@ class IdleController:
         self.maintenance = False
         self.armed = False
         self._last_back = 0.0
+        self._suppress_idle_until = 0.0  # grace window after play() calls
         self.slideshow_files = []
         self.video_files = []
         self._slide_index = 0
@@ -149,6 +165,7 @@ class IdleController:
             playlist.clear()
             for path in self.video_files:
                 playlist.add(path)
+            self._suppress_idle_until = time.perf_counter() + 3.0
             self.player.play(playlist)
             xbmc.executebuiltin("PlayerControl(RepeatAll)")
             log(f"local playlist: {len(self.video_files)} video(s), RepeatAll")
@@ -217,10 +234,19 @@ class IdleController:
             or time.perf_counter() < self._slide_next
         ):
             return
-        self._slide_index = (self._slide_index + 1) % len(self.slideshow_files)
-        self.window.set_idle_image(self.slideshow_files[self._slide_index])
+        self._show_slide((self._slide_index + 1) % len(self.slideshow_files))
+
+    def _show_slide(self, index):
+        self._slide_index = index
+        self.window.set_idle_image(self.slideshow_files[index])
         self._slide_next = time.perf_counter() + self.config["slideshow_seconds"]
-        log(f"slide {self._slide_index + 1}/{len(self.slideshow_files)}")
+
+    def slide_skip(self, direction):
+        """D-pad manual skip: right/down = next, left/up = previous."""
+        if len(self.slideshow_files) < 2 or self.window is None:
+            return
+        self._show_slide((self._slide_index + direction) % len(self.slideshow_files))
+        log(f"slide {self._slide_index + 1}/{len(self.slideshow_files)} (manual)")
 
     # -- input -------------------------------------------------------------
     # Everything here must work with a plain D-pad remote (Android TV etc.):
@@ -241,6 +267,10 @@ class IdleController:
             self._open_actions_menu()
         elif aid in PAUSE_ACTIONS:
             self.resume()
+        elif aid in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_MOVE_DOWN):
+            self.slide_skip(1)
+        elif aid in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_UP):
+            self.slide_skip(-1)
         elif (
             aid in (xbmcgui.ACTION_SELECT_ITEM,)
             or aid in PLAY_ACTIONS
@@ -286,6 +316,7 @@ class IdleController:
             return
         log(f"play test video: {path}")
         self.armed = False
+        self._suppress_idle_until = time.perf_counter() + 3.0
         self.player.play(path)
 
     def arm_test_video(self):
@@ -294,6 +325,7 @@ class IdleController:
             notify("No test video configured (addon settings)", xbmcgui.NOTIFICATION_WARNING)
             return
         log(f"ARM: play+pause {path} — watch for a first-frame flash over idle")
+        self._suppress_idle_until = time.perf_counter() + 3.0
         self.player.play(path)
         for _ in range(200):
             if self.player.isPlaying():
@@ -322,6 +354,13 @@ class IdleController:
         self.rescan_media()
         self.start_content()
 
+    def refresh_view(self):
+        """Re-apply current view config to the visible idle window (after a
+        settings change). Does not interrupt playback."""
+        if self.window is not None and not self.player.playing:
+            self.window.config = self._view_config()
+            self.window.apply()
+
 
 def main():
     config = load_config()
@@ -332,7 +371,11 @@ def main():
     )
     ensure_runtime_assets(config["idle_color"])
 
-    monitor = xbmc.Monitor()
+    # Unattended signage: never let Kodi's own screensaver/dim take over
+    # the display. Released again in the shutdown path.
+    xbmc.executebuiltin("InhibitScreensaver(true)")
+
+    monitor = SettingsMonitor()
     controller = IdleController(config, SignagePlayer(lambda: controller.return_to_idle()))
     player = controller.player
 
@@ -348,10 +391,23 @@ def main():
             HOME.clearProperty(COMMAND_PROPERTY)
             if cmd == COMMAND_RESUME:
                 controller.resume_from_menu()
+            elif cmd == COMMAND_RELOAD:
+                monitor.dirty = True
+
+        # Live settings changes (folder changed, slideshow interval, colors).
+        if monitor.dirty:
+            monitor.dirty = False
+            config = load_config()
+            ensure_runtime_assets(config["idle_color"])
+            controller.config = config
+            controller.rescan_media()
+            controller.refresh_view()
+            log("settings reloaded")
 
         if not config["setup_complete"]:
             # Poll for wizard completion; then bring the idle presentation up.
-            if ADDON.getSettingBool("setup_complete"):
+            # Fresh Addon() — the cached instance misses script-instance writes.
+            if xbmcaddon.Addon().getSettingBool("setup_complete"):
                 config = load_config()
                 ensure_runtime_assets(config["idle_color"])
                 controller.config = config
@@ -362,6 +418,7 @@ def main():
             config["idle_engine"] == 0
             and not player.playing
             and not controller.maintenance
+            and time.perf_counter() >= controller._suppress_idle_until
         ):
             # Only re-show if our window actually lost the foreground —
             # repeated show() re-triggers onInit and resets the slide.
@@ -375,6 +432,7 @@ def main():
     log("service stopping")
     if controller.window is not None:
         controller.window.close()
+    xbmc.executebuiltin("InhibitScreensaver(false)")
 
 
 if __name__ == "__main__":
