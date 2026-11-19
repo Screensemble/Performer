@@ -1,0 +1,153 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: script.screensemble\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-11-19 00:00+0000\n"
+"PO-Revision-Date: 2026-11-19 00:00+0000\n"
+"Language: en_GB\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+
+# --- Categories ---
+msgctxt "#30000"
+msgid "Setup"
+msgstr ""
+
+msgctxt "#30020"
+msgid "Connection"
+msgstr ""
+
+msgctxt "#30030"
+msgid "Idle Presentation"
+msgstr ""
+
+msgctxt "#30050"
+msgid "PoC Testing"
+msgstr ""
+
+# --- Setup ---
+msgctxt "#30010"
+msgid "Mode"
+msgstr ""
+
+msgctxt "#30011"
+msgid "Display mode"
+msgstr ""
+
+msgctxt "#30012"
+msgid "Local (standalone)"
+msgstr ""
+
+msgctxt "#30013"
+msgid "Server (managed/controlled)"
+msgstr ""
+
+msgctxt "#30014"
+msgid "Setup complete"
+msgstr ""
+
+msgctxt "#30015"
+msgid "Local mode"
+msgstr ""
+
+msgctxt "#30016"
+msgid "Media folder"
+msgstr ""
+
+msgctxt "#30017"
+msgid "Seconds per image"
+msgstr ""
+
+msgctxt "#30018"
+msgid "Server mode"
+msgstr ""
+
+msgctxt "#30019"
+msgid "Cache folder for server media"
+msgstr ""
+
+# --- Connection ---
+msgctxt "#30021"
+msgid "Server"
+msgstr ""
+
+msgctxt "#30022"
+msgid "Server address"
+msgstr ""
+
+msgctxt "#30023"
+msgid "Device name"
+msgstr ""
+
+# --- Idle Presentation ---
+msgctxt "#30031"
+msgid "Engine (PoC comparison)"
+msgstr ""
+
+msgctxt "#30032"
+msgid "Idle engine"
+msgstr ""
+
+msgctxt "#30033"
+msgid "Dedicated window (WindowXML)"
+msgstr ""
+
+msgctxt "#30034"
+msgid "ShowPicture builtin (comparison)"
+msgstr ""
+
+msgctxt "#30035"
+msgid "Presentation"
+msgstr ""
+
+msgctxt "#30036"
+msgid "Type"
+msgstr ""
+
+msgctxt "#30037"
+msgid "Solid color"
+msgstr ""
+
+msgctxt "#30038"
+msgid "Static image"
+msgstr ""
+
+msgctxt "#30039"
+msgid "Idle color (hex RGB)"
+msgstr ""
+
+msgctxt "#30040"
+msgid "Idle image"
+msgstr ""
+
+msgctxt "#30041"
+msgid "Scaling"
+msgstr ""
+
+msgctxt "#30042"
+msgid "Contain"
+msgstr ""
+
+msgctxt "#30043"
+msgid "Cover"
+msgstr ""
+
+msgctxt "#30044"
+msgid "Stretch"
+msgstr ""
+
+msgctxt "#30045"
+msgid "Letterbox color (hex RGB)"
+msgstr ""
+
+# --- PoC Testing ---
+msgctxt "#30051"
+msgid "Test playback"
+msgstr ""
+
+msgctxt "#30052"
+msgid "Test video"
+msgstr ""
+
+msgctxt "#30053"
+msgid "Show debug overlay on idle"
+msgstr ""

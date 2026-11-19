@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <window>
     <controls>
-        <!-- Background fill: white runtime-generated texture tinted via colordiffuse.
+        <!-- Background fill: runtime-generated white texture tinted via colordiffuse.
              Doubles as the solid-color idle and the letterbox fill for image mode. -->
         <control type="image" id="200">
             <left>0</left>
@@ -9,6 +9,7 @@
             <width>100%</width>
             <height>100%</height>
             <aspectratio>scale</aspectratio>
+            <texture>special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
         </control>
 
         <!-- Image idle, one control per scaling mode; service shows exactly one.
@@ -19,7 +20,7 @@
             <width>100%</width>
             <height>100%</height>
             <aspectratio>keep</aspectratio>
-            <visible>false</visible>
+            <texture>special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
         </control>
         <control type="image" id="202">
             <left>0</left>
@@ -27,7 +28,7 @@
             <width>100%</width>
             <height>100%</height>
             <aspectratio>scale</aspectratio>
-            <visible>false</visible>
+            <texture>special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
         </control>
         <control type="image" id="203">
             <left>0</left>
@@ -35,7 +36,7 @@
             <width>100%</width>
             <height>100%</height>
             <aspectratio>zoom</aspectratio>
-            <visible>false</visible>
+            <texture>special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
         </control>
 
         <!-- PoC debug overlay (toggleable in addon settings) -->
@@ -48,7 +49,6 @@
             <textcolor>FFFFFFFF</textcolor>
             <align>left</align>
             <aligny>center</aligny>
-            <visible>false</visible>
         </control>
     </controls>
 </window>

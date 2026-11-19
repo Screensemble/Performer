@@ -94,15 +94,35 @@ def resolve_path(path):
 
 
 class IdleWindow(xbmcgui.WindowXML):
-    """Dedicated fullscreen idle window (spec 7.8.1)."""
+    """Dedicated fullscreen idle window (spec 7.8.1).
 
-    def __init__(self, config):
-        super().__init__("idle.xml", ADDON_PATH, "Default", "1080i")
-        self.config = config
-        self.on_action = None  # set by service: callable(action)
+    Constructed with the standard WindowXML signature — Kodi's C-level
+    constructor validates its args, so custom constructor parameters are not
+    allowed. Assign .config (and .on_action) after construction, before show().
+    """
+
+    config = None
+    on_action = None  # callable(action), set by service
+    _img_cid = None   # id of the currently visible image control
+
+    def set_idle_image(self, path):
+        """Swap the visible image control's texture (slideshow rotation).
+        useCache=False is required — otherwise Kodi re-serves the previously
+        displayed texture and the image never changes."""
+        if self._img_cid is not None:
+            self.getControl(self._img_cid).setImage(path, False)
 
     def onInit(self):
-        self._apply()
+        self.apply()
+
+    def apply(self):
+        """Apply the current config to the controls. Safe to call any time —
+        controls only exist once the window has initialized, so failures are
+        logged and ignored (onInit will retry when the window initializes)."""
+        try:
+            self._apply()
+        except Exception as e:
+            xbmc.log(f"[screensemble] idle apply failed: {e}", xbmc.LOGERROR)
 
     def onAction(self, action):
         # Deliberately do NOT call the base implementation: every action we
@@ -119,11 +139,14 @@ class IdleWindow(xbmcgui.WindowXML):
         bg.setColorDiffuse(hex_to_colordiffuse(cfg["letterbox_color"]))
 
         selected = SCALING_CONTROLS.get(cfg["scaling"], CONTROL_IMG_CONTAIN)
+        self._img_cid = selected if cfg["idle_type"] == 1 else None
         for cid in SCALING_CONTROLS.values():
             img = self.getControl(cid)
-            img.setVisible(cid == selected and cfg["idle_type"] == 1)
+            img.setVisible(cid == self._img_cid)
         if cfg["idle_type"] == 1 and cfg["image_path"]:
-            self.getControl(selected).setImage(resolve_path(cfg["image_path"]))
+            resolved = resolve_path(cfg["image_path"])
+            self.getControl(selected).setImage(resolved)
+            xbmc.log(f"[screensemble] idle image -> {resolved}", xbmc.LOGINFO)
             self.getControl(CONTROL_BG).setColorDiffuse(
                 hex_to_colordiffuse(cfg["letterbox_color"])
             )
@@ -136,8 +159,9 @@ class IdleWindow(xbmcgui.WindowXML):
         label.setVisible(bool(cfg["debug_overlay"]))
         if cfg["debug_overlay"]:
             label.setLabel(
-                "SCREENSEMBLE IDLE PoC | engine=window | {} | "
-                "P=play A=arm G=go M=maint".format(
-                    "image" if cfg["idle_type"] == 1 else "color " + cfg["idle_color"]
+                "SCREENSEMBLE IDLE PoC | mode={} | {} | "
+                "OK=play Menu=actions Back x2=exit".format(
+                    "local" if cfg.get("player_mode", 0) == 0 else "server",
+                    "image" if cfg["idle_type"] == 1 else "color " + cfg["idle_color"],
                 )
             )
