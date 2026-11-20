@@ -114,8 +114,8 @@ const steps = [
         h +=
           `<label>Server address</label>` +
           `<input type="text" id="server_address" value="${esc(s.server_address)}" placeholder="server:8080">` +
-          `<label>Auth token (if the server requires one)</label>` +
-          `<input type="password" id="server_auth_token" value="${esc(s.server_auth_token)}">` +
+          `<label>Pairing code (from the server's Pair page)</label>` +
+          `<input type="text" id="pair_code" autocomplete="off" placeholder="ABCD-2345">` +
           `<label>Device name</label>` +
           `<input type="text" id="device_name" value="${esc(s.device_name)}" placeholder="Gallery Wall 1">` +
           `<label>Cache folder (on the display)</label>` +
@@ -164,10 +164,12 @@ let browseTarget = null, browsePath = "", browseStack = [], browseEntries = [];
 
 function pairNow() {
   const s = v("server_address").trim();
+  const c = v("pair_code").trim();
   if (!s) { $("err").textContent = "Enter the server address first."; return; }
+  if (!c) { $("err").textContent = "Enter the pairing code shown on the server's Pair page."; return; }
   // Same endpoint pair.html uses — the token K came in with this page's
   // URL, so no camera hop is needed.
-  window.open(`/pair?s=${encodeURIComponent(s)}&a=${encodeURIComponent(v("server_auth_token"))}&t=${encodeURIComponent(K)}`, "_blank");
+  window.open(`/pair?s=${encodeURIComponent(s)}&a=${encodeURIComponent(c)}&t=${encodeURIComponent(K)}`, "_blank");
   $("err").textContent = "";
 }
 
@@ -219,7 +221,6 @@ function collect() {
   if (state.player_mode === 0) {
   } else {
     state.server_address = v("server_address");
-    state.server_auth_token = v("server_auth_token");
     state.device_name = v("device_name");
     state.server_media_dir = v("server_media_dir");
   }

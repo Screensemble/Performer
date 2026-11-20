@@ -47,7 +47,8 @@ Kodi service addon that turns a device (e.g., Android TV box) into a Screensembl
 - Settings reads must go through a fresh `xbmcaddon.Addon()` — a long-lived instance caches and misses cross-instance writes.
 - Settings path controls must be plain text + a Browse… action button calling `Dialog().browse` — Kodi's native browse controls crash the settings dialog.
 - `ControlImage.setImage(..., useCache=False)` for image rotation — otherwise Kodi serves the stale texture.
-- Player identity is hardware-anchored; the link token is per-device (paired or auto-minted) and enforced by the server on every hello.
+- Player identity is hardware-anchored; the link token is per-device, issued by the server at QR pairing (never minted locally), and enforced on every hello — unpaired displays are refused.
+- The local web admin refuses cross-site POST/DELETE (Origin / Sec-Fetch-Site check); in managed mode only read-only status endpoints stay open, and `pull_file` only fetches http(s) URLs on the paired server's host.
 
 ## Development workflow
 

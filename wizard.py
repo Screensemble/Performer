@@ -9,7 +9,6 @@ the idle presentation.
 
 import os
 import threading
-import time
 
 import xbmc
 import xbmcaddon

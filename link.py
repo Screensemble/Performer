@@ -12,12 +12,12 @@ import base64
 import hashlib
 import json
 import os
-import secrets
 import socket
 import ssl
 import struct
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -68,6 +68,19 @@ def hardware_id():
 # our messages are small JSON.
 
 
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    """pull_file must stay on the paired server — never follow a redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(newurl, code, "redirect refused", headers, fp)
+
+
+_NO_REDIRECT = urllib.request.build_opener(_RefuseRedirect)
+
+_WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+MAX_FRAME = 32 * 1024 * 1024  # server messages are small JSON commands
+
+
 def _ws_connect(url, timeout=8.0):
     u = urllib.parse.urlparse(url if "://" in url else f"ws://{url}")
     host = u.hostname
@@ -89,14 +102,27 @@ def _ws_connect(url, timeout=8.0):
         ).encode()
     )
     resp = b""
-    while b"\r\n\r\n" not in resp:
-        chunk = sock.recv(4096)
+    # Byte-at-a-time so a frame sent right after the 101 stays in the
+    # socket for _recv instead of being swallowed with the headers.
+    while not resp.endswith(b"\r\n\r\n"):
+        chunk = sock.recv(1)
         if not chunk:
             raise OSError("handshake closed")
         resp += chunk
-    status = resp.split(b"\r\n", 1)[0]
+    head = resp[:-4]
+    lines = head.split(b"\r\n")
+    status = lines[0]
     if b" 101" not in status:
         raise OSError(f"handshake refused: {status.decode('utf-8','replace')}")
+    headers = {}
+    for line in lines[1:]:
+        k, _, v = line.decode("latin-1").partition(":")
+        headers[k.strip().lower()] = v.strip()
+    want = base64.b64encode(
+        hashlib.sha1((key + _WS_GUID).encode()).digest()
+    ).decode()
+    if headers.get("sec-websocket-accept") != want:
+        raise OSError("handshake refused: bad Sec-WebSocket-Accept")
     return sock
 
 
@@ -119,13 +145,27 @@ def _send(sock, text):
 
 
 def _recv(sock):
-    """One frame -> (opcode, payload). Raises OSError on close/EOF."""
+    """One frame -> (opcode, payload). Raises OSError on close/EOF.
+    socket.timeout only escapes while idle between frames — once a frame
+    has started it is read to the end so the stream never desyncs."""
+    started = [False]
+
     def read(n):
         buf = b""
+        stalls = 0
         while len(buf) < n:
-            chunk = sock.recv(n - len(buf))
+            try:
+                chunk = sock.recv(n - len(buf))
+            except socket.timeout:
+                if not started[0] and not buf:
+                    raise
+                stalls += 1
+                if stalls > 30:
+                    raise OSError("frame stalled")
+                continue
             if not chunk:
                 raise OSError("closed")
+            started[0] = True
             buf += chunk
         return buf
 
@@ -136,6 +176,8 @@ def _recv(sock):
         n = struct.unpack(">H", read(2))[0]
     elif n == 127:
         n = struct.unpack(">Q", read(8))[0]
+    if n > MAX_FRAME:
+        raise OSError(f"frame too large ({n} bytes)")
     if b2 & 0x80:
         mask = read(4)
         data = bytes(x ^ mask[i % 4] for i, x in enumerate(read(n)))
@@ -437,11 +479,19 @@ class ServerLink:
         try:
             if not url:
                 raise ValueError("no url")
+            # Only fetch from the paired server over HTTP(S) — never file://
+            # or another host a forged message names.
+            pu = urllib.parse.urlparse(str(url))
+            server = urllib.parse.urlparse(self._ws_url() or "")
+            if pu.scheme not in ("http", "https") or (
+                (pu.hostname or "").lower() != (server.hostname or "").lower()
+            ):
+                raise ValueError("pull url is not on the paired server")
             folder = self._media_dir()
             if not folder or "://" in folder:
                 raise ValueError("media folder is not local")
             os.makedirs(folder, exist_ok=True)
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with _NO_REDIRECT.open(url, timeout=30) as r:
                 total = int(r.headers.get("Content-Length") or 0)
                 dest = os.path.join(folder, name + ".part")
                 got = last = 0
@@ -503,17 +553,9 @@ class ServerLink:
         )
 
     def _hello(self):
-        # Per-device auth token: pairing supplies one, but a display
-        # configured manually has none — mint one once and keep it in
-        # settings. The server binds it (first-come) and enforces it on
-        # every later hello, so a forged hardware_id can't hijack the
-        # registry entry.
+        # Per-device auth token issued by the server at QR pairing; the
+        # server rejects any hello without it.
         token = self.c.config.get("server_auth_token") or ""
-        if not token:
-            token = secrets.token_hex(8)
-            self.addon.setSetting("server_auth_token", token)
-            self.c.config["server_auth_token"] = token
-            log("link: minted auth token")
         return {
             "type": "hello",
             "product": "screensemble-client",
@@ -529,6 +571,12 @@ class ServerLink:
         while not self._stop:
             url = self._ws_url()
             if not url:
+                time.sleep(10)
+                continue
+            if not self.c.config.get("server_auth_token"):
+                # Never paired — the server would refuse us. Wait for the
+                # QR pairing flow to store a token.
+                xbmcgui.Window(10000).setProperty(LINK_PROPERTY, "unpaired")
                 time.sleep(10)
                 continue
             try:
