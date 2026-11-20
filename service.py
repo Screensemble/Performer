@@ -99,6 +99,7 @@ def load_config():
         "server_auth_token": addon.getSetting("server_auth_token"),
         "local_lock": addon.getSettingBool("local_lock"),
         "local_password": addon.getSetting("local_password"),
+        "tls_insecure": addon.getSettingBool("tls_insecure"),
     }
 
 

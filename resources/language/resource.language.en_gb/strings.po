@@ -182,3 +182,7 @@ msgctxt "#30084"
 msgid "Exit password"
 msgstr ""
 
+msgctxt "#30085"
+msgid "Skip TLS verification (self-signed)"
+msgstr ""
+

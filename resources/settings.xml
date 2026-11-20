@@ -118,6 +118,11 @@
                     </constraints>
                     <control type="edit" format="string" hidden="true"/>
                 </setting>
+                <setting id="tls_insecure" type="boolean" label="30085">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
             </group>
         </category>
         <category id="connection" label="30020">

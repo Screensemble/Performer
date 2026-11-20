@@ -51,6 +51,7 @@ EDITABLE_SETTINGS = {
     "local_media_folder": "str",
     "local_lock": "bool",
     "local_password": "str",
+    "tls_insecure": "bool",
     "idle_color": "str",
     "letterbox_color": "str",
     "idle_scaling": "int",

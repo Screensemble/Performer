@@ -81,17 +81,21 @@ _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_FRAME = 32 * 1024 * 1024  # server messages are small JSON commands
 
 
-def _ws_connect(url, timeout=8.0):
+def _ws_connect(url, timeout=8.0, insecure=False):
     u = urllib.parse.urlparse(url if "://" in url else f"ws://{url}")
     host = u.hostname
     port = u.port or (443 if u.scheme == "wss" else 80)
     path = u.path or "/"
     raw = socket.create_connection((host, port), timeout)
-    sock = (
-        ssl.create_default_context().wrap_socket(raw, server_hostname=host)
-        if u.scheme == "wss"
-        else raw
-    )
+    if u.scheme == "wss":
+        ctx = (
+            ssl._create_unverified_context()
+            if insecure
+            else ssl.create_default_context()
+        )
+        sock = ctx.wrap_socket(raw, server_hostname=host)
+    else:
+        sock = raw
     key = base64.b64encode(os.urandom(16)).decode()
     sock.sendall(
         (
@@ -500,7 +504,15 @@ class ServerLink:
             if not folder or "://" in folder:
                 raise ValueError("media folder is not local")
             os.makedirs(folder, exist_ok=True)
-            with _NO_REDIRECT.open(url, timeout=30) as r:
+            opener = _NO_REDIRECT
+            if pu.scheme == "https" and self.c.config.get("tls_insecure"):
+                opener = urllib.request.build_opener(
+                    _RefuseRedirect,
+                    urllib.request.HTTPSHandler(
+                        context=ssl._create_unverified_context()
+                    ),
+                )
+            with opener.open(url, timeout=30) as r:
                 total = int(r.headers.get("Content-Length") or 0)
                 dest = os.path.join(folder, name + ".part")
                 got = last = 0
@@ -589,7 +601,10 @@ class ServerLink:
                 time.sleep(10)
                 continue
             try:
-                self.sock = _ws_connect(url)
+                self.sock = _ws_connect(
+                    url,
+                    insecure=bool(self.c.config.get("tls_insecure")),
+                )
                 _send(self.sock, json.dumps(self._hello()))
                 self.sock.settimeout(1.0)
                 log(f"connected to {url}")
