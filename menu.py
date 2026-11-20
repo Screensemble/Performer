@@ -422,6 +422,12 @@ def _add_url():
 
 
 def main():
+    # First launch can arrive through this plugin entry instead of the
+    # script path — the wizard owns the flow until setup_complete flips.
+    if not ADDON.getSettingBool("setup_complete"):
+        from wizard import run_wizard
+        run_wizard()
+
     query = sys.argv[2][1:] if len(sys.argv) > 2 else ""
     params = dict(urllib.parse.parse_qsl(query))
     action = params.get("action", "")
