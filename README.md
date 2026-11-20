@@ -1,78 +1,100 @@
 # Screensemble Player (Kodi addon)
 
 Service addon that turns a Kodi device into a Screensemble signage display.
-See `AGENTS.md` for architecture notes and `../screensemble-design-spec.md`
-(in the parent folder) for the full design.
+See `AGENTS.md` for architecture notes.
 
-Current state: **Proof of concept** — idle presentation rendering and the
-video-to-idle transition, built to answer spec open question #2 (which
-mechanism draws the idle screen?) and #7 (can playback be prepared
-invisibly?).
+The display always shows an intentional state: the idle presentation stays
+resident beneath playback, so video↔image transitions reveal it instantly
+— the Kodi home screen, OSD, and launcher are never exposed during normal
+operation.
 
-## Install on a PC/Mac/Linux Kodi
+## Features
 
-1. Zip the contents of this folder so `addon.xml` is at the zip root
-   (zip name doesn't matter).
-2. Kodi → Settings → Add-ons → **Install from zip file** → pick the zip.
-3. Restart Kodi (or disable/enable the addon) so the service starts.
+- **Unified content sequence** — a single playlist across images and
+  videos, honoring stored order, per-item enable/disable, schedules
+  (dates, weekdays, time-of-day incl. overnight), shuffle, and remote URL
+  items.
+- **Seamless transitions** — consecutive videos chain inside one Kodi
+  playlist (~100ms internal hops, seamless all-video loops); the next
+  image is preloaded beneath the last video of a run so video→image is an
+  instant reveal; images hold through the video load gap. Works across
+  the loop wraparound.
+- **Managed mode** — pair the display to a Screensemble server (QR or
+  on-TV confirm) and it's fully remote-managed: media pushes (SHA-256
+  verified, staged `.part` → activate), shared playlist sync, settings,
+  commands. Content changes apply at the next natural item boundary, so
+  updates never cut a piece short.
+- **Managed cache** — server media lives in a cache folder with a
+  configurable size cap; unreferenced files evict least-recently-used
+  first, pinned playlist items are never evicted.
+- **Local mode** — runs entirely standalone: own media folder, playlist
+  UI on the TV, web admin on the LAN, everything keeps working with no
+  server at all.
+- **Custom setup wizard** — first launch from Programs runs a step UI
+  (Local vs Server, slideshow timing, server address). Fully
+  remote-navigable.
+- **Branded standby** — with no content, a managed display holds a dim
+  brand mark on black; a local display rotates feature cards.
+- **Remote-first input** — everything works from a basic D-pad remote;
+  no keyboard required.
+- **Screensaver inhibition** while the service runs.
+- **Stall watchdog** — a hung video (player alive, clock frozen) is
+  skipped automatically.
 
-For faster iteration, you can also copy/link this folder directly into Kodi's
-`addons/` directory (`%APPDATA%\Kodi\addons\` on Windows) — it must be named
-`script.screensemble` — then restart Kodi.
+## Install
 
-## Configure
+**From the Screensemble repository (recommended):** install
+`repository.screensemble` once from a release zip, then install
+**Screensemble Player** from it — new releases arrive through Kodi's
+normal update check.
 
-Kodi → Add-ons → My add-ons → Services → **Screensemble Player** → Configure:
+**Direct zip:** grab `script.screensemble-<version>.zip` from the latest
+release, then Kodi → Settings → Add-ons → **Install from zip file**.
+Restart Kodi so the service starts.
 
-- **Idle engine**: `Dedicated window` (the candidate design) or
-  `ShowPicture builtin` (comparison only).
-- **Type**: `Solid color` + `Idle color`, or `Static image` + pick a file.
-- **Scaling** (image mode): Contain / Cover / Stretch; `Letterbox color`
-  fills unused space in Contain mode.
-- **Test video**: pick a local video file — required for the transition test.
-- **Debug overlay**: shows a status line on the idle screen; leave on for PoC.
+For development, copy this folder into Kodi's `addons/` directory named
+`script.screensemble` and restart, or build the zip with
+`python tools/build_zip.py`.
 
-Restart Kodi after changing settings (the PoC reads them once at startup).
+On first run the addon stays hidden until you open it from
+**Programs → Screensemble**, which launches the setup wizard.
 
-## What to test
+## Remote map
 
-The idle presentation appears automatically when the service starts.
+| Button | On the idle screen | During video |
+|---|---|---|
+| OK / Select / Menu / Play | Actions menu | Kodi player OSD |
+| D-pad right / down | Next item | Kodi player OSD |
+| D-pad left / up | Previous item | Kodi player OSD |
+| Back | Once: toast; twice within 3 s: exit to Kodi UI | Stop → return to idle |
 
-While the idle window is up (window engine only):
+Resume after exiting: **Programs → Screensemble → Resume**.
 
-| Key | Action |
-|---|---|
-| `P` or `Enter` | Play the configured test video fullscreen |
-| `A` | "Arm" — start then immediately pause. **Watch for a first-frame flash over the idle screen** |
-| `G` | "Go" — resume paused playback |
-| `M` | Maintenance — deliberately reveal the Kodi UI; the OK dialog returns you to idle |
+## Web admin
 
-Everything else (ESC, back, arrows) is swallowed — the idle window should not
-be closable by accident.
+In Local mode the addon serves an admin page on port **8282**
+(configurable; enable/disable needs a Kodi restart):
 
-### Pass/fail observations (spec section 12)
+- `http://<device-ip>:8282/` — status, playlist ordering,
+  enable/disable, per-item durations and schedules, shuffle, URL entries,
+  media upload/delete, transport commands, settings.
 
-- **Idle at boot**: does the idle screen come up by itself? How much Kodi UI
-  is visible before it appears? (On desktop Kodi some home-screen flash at
-  startup is expected; on the kiosk target the addon would be the launcher —
-  note the difference.)
-- **Idle → playback**: does the video take over cleanly, no intermediate UI?
-- **Playback → idle** (primary criterion): when the video ends naturally, when
-  you stop it (`X`), and on error — does Kodi's home screen or OSD flash
-  between the last frame and the idle window? Roughly how long is the gap?
-- **Arm**: after pressing `A`, is the video's first frame visible? Is the
-  paused state stable? Does `G` resume promptly?
-- **Repeat**: run the cycle many times — leaks, drift, UI flashes?
+Media management is disabled when the media folder is a remote VFS path
+(`smb://`, `nfs://`, …) since Python can't write those.
+
+## Settings
+
+Kodi → Add-ons → My add-ons → Services → **Screensemble Player** →
+Configure. Setup (mode, media folder, web admin), Connection (server
+address, device name), Idle Presentation (colors, scaling), Advanced
+(custom folders, media cache limit, re-run wizard).
+
+Path pickers in settings are text fields plus a **Browse…** button that
+opens Kodi's VFS browser — do not reintroduce native browse controls;
+they crash Kodi's settings dialog. Changes apply live without a restart.
 
 ## Logs
 
-All events are timestamped in `kodi.log` (Windows: `%APPDATA%\Kodi\kodi.log`)
-with the `[screensemble]` prefix — `playback ended t=...` vs `idle shown
-t=...` gives the transition gap in seconds.
-
-## Known limitations (PoC)
-
-- `ShowPicture` engine can't intercept keys or attach the debug overlay —
-  this is itself a finding in favor of the window approach.
-- Settings are read once at startup; live reconfiguration comes later.
-- No server connection, asset cache, or scheduling yet — PoC scope only.
+Service events appear in `kodi.log` with the `[screensemble]` prefix —
+`seq N/M` lines mark each item advance, `content update queued` marks a
+deferred change waiting for the next boundary.

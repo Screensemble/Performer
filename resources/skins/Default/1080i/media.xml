@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+        <right>1920</right>
+        <bottom>1080</bottom>
+    </coordinates>
+    <controls>
+        <!-- Dim background so the manager floats over whatever Kodi shows -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>100%</width>
+            <height>100%</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF000000">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+
+        <!-- Wide management card -->
+        <control type="image" id="410">
+            <left>180</left>
+            <top>120</top>
+            <width>1560</width>
+            <height>840</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF10203C">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+        <control type="image" id="411">
+            <left>180</left>
+            <top>120</top>
+            <width>1560</width>
+            <height>6</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF3EC1F3">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+
+        <control type="image" id="400">
+            <left>230</left>
+            <top>165</top>
+            <width>330</width>
+            <height>72</height>
+            <aspectratio>keep</aspectratio>
+            <texture>screensemble-wordmark.png</texture>
+        </control>
+        <control type="image" id="412">
+            <left>1570</left>
+            <top>145</top>
+            <width>110</width>
+            <height>110</height>
+            <aspectratio>keep</aspectratio>
+            <texture>screensemble-mark.png</texture>
+        </control>
+        <control type="label" id="401">
+            <left>230</left>
+            <top>252</top>
+            <width>1470</width>
+            <height>30</height>
+            <font>font13</font>
+            <textcolor>FF3EC1F3</textcolor>
+            <align>left</align>
+        </control>
+        <control type="label" id="403">
+            <left>230</left>
+            <top>282</top>
+            <width>1470</width>
+            <height>56</height>
+            <font>font32</font>
+            <textcolor>FFFFFFFF</textcolor>
+            <align>left</align>
+        </control>
+        <control type="textbox" id="402">
+            <left>230</left>
+            <top>352</top>
+            <width>1470</width>
+            <height>56</height>
+            <font>font13</font>
+            <textcolor>FF7A9BB8</textcolor>
+            <align>left</align>
+            <autoscroll delay="4000" time="1500" repeat="8000">true</autoscroll>
+        </control>
+
+        <!-- Playlist / option rows. Two-line layout: title + dim meta. -->
+        <control type="list" id="9000">
+            <left>230</left>
+            <top>426</top>
+            <width>1470</width>
+            <height>504</height>
+            <itemlayout height="76">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>1470</width>
+                    <height>66</height>
+                    <aspectratio>scale</aspectratio>
+                    <texture colordiffuse="FF1D3A63">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+                </control>
+                <control type="image">
+                    <left>16</left>
+                    <top>9</top>
+                    <width>48</width>
+                    <height>48</height>
+                    <aspectratio>keep</aspectratio>
+                    <info>ListItem.Icon</info>
+                </control>
+                <control type="label">
+                    <left>84</left>
+                    <top>6</top>
+                    <width>1360</width>
+                    <height>30</height>
+                    <font>font14</font>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label</info>
+                </control>
+                <control type="label">
+                    <left>84</left>
+                    <top>36</top>
+                    <width>1360</width>
+                    <height>26</height>
+                    <font>font12</font>
+                    <textcolor>FF7A9BB8</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label2</info>
+                </control>
+            </itemlayout>
+            <focusedlayout height="76">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>1470</width>
+                    <height>66</height>
+                    <aspectratio>scale</aspectratio>
+                    <texture colordiffuse="FF1E9BE8">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+                </control>
+                <control type="image">
+                    <left>16</left>
+                    <top>9</top>
+                    <width>48</width>
+                    <height>48</height>
+                    <aspectratio>keep</aspectratio>
+                    <info>ListItem.Icon</info>
+                </control>
+                <control type="label">
+                    <left>84</left>
+                    <top>6</top>
+                    <width>1360</width>
+                    <height>30</height>
+                    <font>font14</font>
+                    <textcolor>FF06101F</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label</info>
+                </control>
+                <control type="label">
+                    <left>84</left>
+                    <top>36</top>
+                    <width>1360</width>
+                    <height>26</height>
+                    <font>font12</font>
+                    <textcolor>FF0D3555</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label2</info>
+                </control>
+            </focusedlayout>
+        </control>
+    </controls>
+</window>

@@ -1,0 +1,64 @@
+name: release
+
+# On a published GitHub release: build the Kodi-installable zip, attach it
+# (plus the repository addon zip) to the release, and refresh the `repo`
+# branch that serves as the Kodi addon repository index.
+#
+# Layout of the repo branch (datadir for repository.screensemble):
+#   addons.xml + addons.xml.md5
+#   script.screensemble/script.screensemble-<ver>.zip + icon + fanart
+#   repository.screensemble/repository.screensemble-<ver>.zip + icon + fanart
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version gate — tag must match addon.xml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(python3 -c "import xml.etree.ElementTree as ET; print(ET.parse('addon.xml').getroot().attrib['version'])")
+          echo "tag=$TAG addon.xml=$VER"
+          [ "$TAG" = "$VER" ] || { echo "release tag must match addon.xml version"; exit 1; }
+          echo "VERSION=$VER" >> "$GITHUB_ENV"
+
+      - name: Build addon zip
+        run: python3 tools/build_zip.py "dist/script.screensemble-${VERSION}.zip"
+
+      - name: Build repository index
+        run: python3 tools/build_repo.py "dist/script.screensemble-${VERSION}.zip" "$RUNNER_TEMP/repo_out"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "dist/script.screensemble-${VERSION}.zip" \
+            "$RUNNER_TEMP"/repo_out/repository.screensemble/repository.screensemble-*.zip \
+            --clobber
+
+      - name: Publish repo branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin repo >/dev/null 2>&1; then
+            git fetch origin repo
+            git checkout repo
+          else
+            git checkout --orphan repo
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          # Fresh index every release — stale versions don't linger, and
+          # build dirs (dist/) must never land on the repo branch.
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -r "$RUNNER_TEMP/repo_out/." .
+          git add -A
+          git commit -m "repo: ${GITHUB_REF_NAME} (script.screensemble ${VERSION})" \
+            || echo "repo index unchanged"
+          git push origin repo

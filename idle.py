@@ -1,14 +1,10 @@
-"""Idle presentation rendering for the Screensemble PoC.
+"""Idle presentation rendering.
 
-Two engines are implemented so they can be compared on hardware (spec open
-question #2):
-
-- "window":  a dedicated fullscreen xbmcgui.WindowXML window (spec 7.8.1 —
-             the preferred candidate). Fully controllable: letterbox color,
-             scaling mode, key interception, debug overlay.
-- "picture": Kodi's built-in picture viewer via ShowPicture(). One line, but
-             we cannot intercept keys or control the window — included so the
-             limitation is testable, not as a real candidate.
+The idle presentation is a dedicated fullscreen xbmcgui.WindowXML window
+(spec 7.8.1) held open modally for the lifetime of the service: fullscreen
+video opens over it, so stopping playback reveals it instantly with no
+Kodi UI in between. Fully controllable: letterbox color, scaling mode,
+key interception, debug overlay.
 """
 
 import os
@@ -25,7 +21,7 @@ ADDON_PATH = ADDON.getAddonInfo("path")
 PROFILE = xbmcvfs.translatePath(ADDON.getAddonInfo("profile"))
 
 WHITE_PNG = os.path.join(PROFILE, "screensemble_white.png")
-SOLID_PNG = os.path.join(PROFILE, "screensemble_solid.png")
+ROUND_PNG = os.path.join(PROFILE, "screensemble_card.png")
 
 # Control ids inside idle.xml
 CONTROL_BG = 200          # fullscreen white texture, tinted via colordiffuse
@@ -38,24 +34,12 @@ CONTROL_DEBUG_LABEL = 300
 SCALING_CONTROLS = {0: CONTROL_IMG_CONTAIN, 1: CONTROL_IMG_COVER, 2: CONTROL_IMG_STRETCH}
 
 
-def letter_key(ch):
-    """Kodi action id for a keyboard letter key."""
-    return 0xF000 + ord(ch)
-
-
 def hex_to_colordiffuse(value):
     """'#rrggbb' -> 'FFRRGGBB' for ControlImage.setColorDiffuse."""
     h = (value or "").strip().lstrip("#")
     if len(h) != 6 or any(c not in "0123456789abcdefABCDEF" for c in h):
         h = "000000"
     return "FF" + h.upper()
-
-
-def hex_to_rgb(value):
-    h = (value or "").strip().lstrip("#")
-    if len(h) != 6:
-        h = "000000"
-    return bytes(int(h[i:i + 2], 16) for i in (0, 2, 4))
 
 
 def write_solid_png(path, rgb, size=8):
@@ -78,12 +62,55 @@ def write_solid_png(path, rgb, size=8):
         f.write(payload)
 
 
-def ensure_runtime_assets(color_hex):
-    """Generate the white tile and solid-color PNG in the profile dir."""
+def write_rounded_png(path, w, h, radius, fg, bg, pad=4):
+    """Rounded rect (fg rgb) on a solid bg — opaque RGB PNG. No alpha
+    channel, so Kodi's texture compression can't chew up the corners; a
+    ~2px color blend keeps the edge smooth. `pad` insets the rect so the
+    curve never touches the texture boundary (avoids edge clipping)."""
+    import math
+
+    def chunk(tag, data):
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(
+            ">I", zlib.crc32(body) & 0xFFFFFFFF
+        )
+
+    hw, hh = w / 2.0, h / 2.0
+    inner_x, inner_y = hw - pad - radius, hh - pad - radius
+    rows = []
+    for y in range(h):
+        row = bytearray(b"\x00")
+        dy = abs(y + 0.5 - hh) - inner_y
+        for x in range(w):
+            dx = abs(x + 0.5 - hw) - inner_x
+            ox, oy = max(dx, 0.0), max(dy, 0.0)
+            d = math.sqrt(ox * ox + oy * oy) + min(max(dx, dy), 0.0) - radius
+            t = 0.5 - d / 2.0
+            t = 0.0 if t < 0 else (1.0 if t > 1 else t)
+            row += bytes(
+                int(bg[i] + (fg[i] - bg[i]) * t) for i in range(3)
+            )
+        rows.append(bytes(row))
+    ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)  # 8-bit RGB
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(b"".join(rows)))
+        + chunk(b"IEND", b"")
+    )
+    with open(path, "wb") as f:
+        f.write(png)
+
+
+def ensure_runtime_assets():
+    """Generate the white tile + rounded card the skins tint via
+    colordiffuse."""
     xbmcvfs.mkdirs(PROFILE)
     if not os.path.exists(WHITE_PNG):
         write_solid_png(WHITE_PNG, b"\xff\xff\xff")
-    write_solid_png(SOLID_PNG, hex_to_rgb(color_hex))
+    if not os.path.exists(ROUND_PNG):
+        # Navy card on black — the splash dimmer is solid black behind it.
+        write_rounded_png(ROUND_PNG, 800, 185, 32, (14, 27, 44), (0, 0, 0))
 
 
 def resolve_path(path):
@@ -91,6 +118,42 @@ def resolve_path(path):
     if not path:
         return ""
     return xbmcvfs.translatePath(path)
+
+
+def restart_app():
+    """Relaunch Kodi. The RestartApp builtin is unreliable on Windows —
+    it can terminate instead of restarting. Spawn a detached helper that
+    waits for shutdown to finish, then relaunches; quit cleanly."""
+    import subprocess
+    import sys
+
+    exe = sys.executable  # embedded Python runs inside kodi.exe
+    try:
+        if os.name == "nt":
+            bat = os.path.join(PROFILE, "screensemble-restart.bat")
+            with open(bat, "w") as f:
+                f.write(
+                    "@echo off\r\n"
+                    # ping delay — timeout.exe needs a console stdin and
+                    # fails outright in this detached context.
+                    "ping -n 6 127.0.0.1 >nul\r\n"
+                    f'start "" "{exe}"\r\n'
+                )
+            subprocess.Popen(
+                ["cmd.exe", "/c", bat],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                close_fds=True,
+            )
+        else:
+            subprocess.Popen(
+                ["sh", "-c", f'sleep 5 && "{exe}"'],
+                start_new_session=True,
+                close_fds=True,
+            )
+    except Exception:
+        xbmc.executebuiltin("RestartApp")
+        return
+    xbmc.executebuiltin("Quit")
 
 
 class IdleWindow(xbmcgui.WindowXML):
@@ -104,13 +167,39 @@ class IdleWindow(xbmcgui.WindowXML):
     config = None
     on_action = None  # callable(action), set by service
     _img_cid = None   # id of the currently visible image control
+    _last_img = None  # texture currently loaded — dedupes re-sets
+
+    def _image_control(self):
+        """The scaling-selected image control. apply() hides the image
+        layer when the config has no image (idle_type=0 — e.g. while a
+        video item is current), leaving _img_cid None; derive it lazily
+        and un-hide so a later slide can always paint."""
+        if self._img_cid is None:
+            self._img_cid = SCALING_CONTROLS.get(
+                (self.config or {}).get("scaling"), CONTROL_IMG_CONTAIN
+            )
+            self.getControl(self._img_cid).setVisible(True)
+        return self.getControl(self._img_cid)
 
     def set_idle_image(self, path):
         """Swap the visible image control's texture (slideshow rotation).
         useCache=False is required — otherwise Kodi re-serves the previously
         displayed texture and the image never changes."""
-        if self._img_cid is not None:
-            self.getControl(self._img_cid).setImage(path, False)
+        if path == self._last_img:
+            return   # already showing — a re-set would flicker the texture
+        self._last_img = path
+        img = self._image_control()
+        img.setColorDiffuse("FFFFFFFF")   # undo clear_idle_image tint
+        img.setImage(path, False)
+
+    def clear_idle_image(self):
+        """Blank the image layer to black — the load gap between video
+        items then shows an intentional cut instead of stale artwork or
+        the standby card."""
+        self._last_img = None
+        img = self._image_control()
+        img.setImage(WHITE_PNG, False)
+        img.setColorDiffuse("FF000000")
 
     def onInit(self):
         self.apply()
@@ -139,14 +228,27 @@ class IdleWindow(xbmcgui.WindowXML):
         bg.setColorDiffuse(hex_to_colordiffuse(cfg["letterbox_color"]))
 
         selected = SCALING_CONTROLS.get(cfg["scaling"], CONTROL_IMG_CONTAIN)
-        self._img_cid = selected if cfg["idle_type"] == 1 else None
+        # onInit re-fires every time the modal window is re-revealed after
+        # playback — while the current item is a video the config reports
+        # "no image", but the engine may have staged an underlay (the next
+        # image preloaded). Restore it or the reveal is a black gap.
+        want_img = cfg["idle_type"] == 1 or bool(self._last_img)
+        self._img_cid = selected if want_img else None
         for cid in SCALING_CONTROLS.values():
             img = self.getControl(cid)
             img.setVisible(cid == self._img_cid)
         if cfg["idle_type"] == 1 and cfg["image_path"]:
             resolved = resolve_path(cfg["image_path"])
+            self._last_img = resolved
+            self.getControl(selected).setColorDiffuse("FFFFFFFF")
             self.getControl(selected).setImage(resolved)
-            xbmc.log(f"[screensemble] idle image -> {resolved}", xbmc.LOGINFO)
+            self.getControl(CONTROL_BG).setColorDiffuse(
+                hex_to_colordiffuse(cfg["letterbox_color"])
+            )
+        elif self._last_img:
+            img = self.getControl(selected)
+            img.setColorDiffuse("FFFFFFFF")
+            img.setImage(self._last_img)
             self.getControl(CONTROL_BG).setColorDiffuse(
                 hex_to_colordiffuse(cfg["letterbox_color"])
             )
@@ -155,13 +257,4 @@ class IdleWindow(xbmcgui.WindowXML):
                 hex_to_colordiffuse(cfg["idle_color"])
             )
 
-        label = self.getControl(CONTROL_DEBUG_LABEL)
-        label.setVisible(bool(cfg["debug_overlay"]))
-        if cfg["debug_overlay"]:
-            label.setLabel(
-                "SCREENSEMBLE IDLE PoC | mode={} | {} | "
-                "OK=play Menu=actions Back x2=exit".format(
-                    "local" if cfg.get("player_mode", 0) == 0 else "server",
-                    "image" if cfg["idle_type"] == 1 else "color " + cfg["idle_color"],
-                )
-            )
+        self.getControl(CONTROL_DEBUG_LABEL).setVisible(False)

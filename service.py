@@ -1,3 +1,4 @@
+import json
 import os
 import threading
 import time
@@ -11,10 +12,12 @@ from idle import (
     ADDON_PATH,
     IdleWindow,
     ensure_runtime_assets,
-    letter_key,
     resolve_path,
-    SOLID_PNG,
 )
+import medialist
+from medialist import IMAGE_EXTS, VIDEO_EXTS
+from splash import SplashWindow
+from web import AdminServer, post_json
 
 ADDON = xbmcaddon.Addon()
 HOME = xbmcgui.Window(10000)
@@ -22,9 +25,17 @@ HOME = xbmcgui.Window(10000)
 COMMAND_PROPERTY = "screensemble.command"
 COMMAND_RESUME = "resume"
 COMMAND_RELOAD = "reload"
+DEFAULT_SLIDE_SECONDS = 10.0  # per-item playlist durations override this
+PROMO_SECONDS = 8.0           # feature promos when the playlist is empty
+PROMO_DIR = os.path.join(ADDON_PATH, "resources", "media")
+# Managed displays show a static brand standby instead of promos while
+# waiting for the server — self-advertising makes no sense there.
+STANDBY_IMG = os.path.join(PROMO_DIR, "standby.png")
+PROP_PAIR_URL = "screensemble.pairurl"     # set by web /pair — offer pending
+PROP_PAIR_AUTH = "screensemble.pairauth"
+PROP_PAIR_INFO = "screensemble.pairinfo"   # server /api/info JSON
+PROP_PAIR_ID = "screensemble.pairid"       # server's pairing_id
 
-IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
-VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts"}
 BACK_ACTIONS = {
     xbmcgui.ACTION_PARENT_DIR,
     xbmcgui.ACTION_PREVIOUS_MENU,
@@ -38,43 +49,20 @@ MENU_ACTIONS = {
 }
 # Remote media buttons.
 PLAY_ACTIONS = {getattr(xbmcgui, "ACTION_PLAYER_PLAY", 79)}
-PAUSE_ACTIONS = {
-    getattr(xbmcgui, "ACTION_PAUSE", 12),
-    getattr(xbmcgui, "ACTION_PLAYER_PLAYPAUSE", 80),
-}
 BACK_EXIT_SECONDS = 3.0
 
-# Custom keymap: while a video is fullscreen, Back/ESC stops playback so the
-# remote behaves like the idle screen (Back x2 on idle exits to Kodi). Written
-# to userdata/keymaps at service start; Kodi loads it on the next boot.
-KEYMAP_XML = """<?xml version="1.0" encoding="UTF-8"?>
-<keymap>
-    <FullscreenVideo>
-        <keyboard>
-            <escape>Stop</escape>
-            <backspace>Stop</backspace>
-        </keyboard>
-        <remote>
-            <back>Stop</back>
-        </remote>
-    </FullscreenVideo>
-</keymap>
-"""
+# Legacy: the opt-in Back=Stop keymap was replaced by fullscreen-exit
+# detection in the poll loop. Remove a leftover file if an older version
+# installed one — it lives in userdata and persists across upgrades.
+LEGACY_KEYMAP = os.path.join(
+    xbmcvfs.translatePath("special://userdata"), "keymaps", "screensemble.xml"
+)
 
 
-def install_keymap():
-    keymaps_dir = os.path.join(xbmcvfs.translatePath("special://userdata"), "keymaps")
-    target = os.path.join(keymaps_dir, "screensemble.xml")
-    xbmcvfs.mkdirs(keymaps_dir)
-    try:
-        with open(target, "r", encoding="utf-8") as f:
-            if f.read() == KEYMAP_XML:
-                return
-    except OSError:
-        pass
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(KEYMAP_XML)
-    log("installed custom keymap (takes effect on next Kodi start)")
+def remove_legacy_keymap():
+    if os.path.exists(LEGACY_KEYMAP):
+        os.remove(LEGACY_KEYMAP)
+        log("removed leftover Screensemble keymap (no longer needed)")
 
 
 def log(msg):
@@ -95,16 +83,21 @@ def load_config():
         "server_address": addon.getSetting("server_address"),
         "device_name": addon.getSetting("device_name"),
         "local_media_folder": addon.getSetting("local_media_folder"),
-        "slideshow_seconds": addon.getSettingInt("slideshow_seconds") or 10,
+
         "server_media_dir": addon.getSetting("server_media_dir"),
-        "idle_engine": addon.getSettingInt("idle_engine"),      # 0=window 1=picture
+        "cache_max_mb": addon.getSettingInt("cache_max_mb"),
         "idle_type": addon.getSettingInt("idle_type"),          # 0=color 1=image
         "idle_color": addon.getSetting("idle_color") or "#000000",
         "letterbox_color": addon.getSetting("letterbox_color") or "#000000",
         "image_path": addon.getSetting("idle_image"),
         "scaling": addon.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
-        "test_video": addon.getSetting("test_video"),
-        "debug_overlay": addon.getSettingBool("poc_debug"),
+
+        "web_admin": addon.getSettingBool("web_admin"),
+        "web_port": addon.getSettingInt("web_port") or 8282,
+        "splash_seconds": addon.getSettingInt("splash_seconds"),
+        "splash_show_server": addon.getSettingBool("splash_show_server"),
+        "splash_show_qr": addon.getSettingBool("splash_show_qr"),
+        "server_auth_token": addon.getSetting("server_auth_token"),
     }
 
 
@@ -123,14 +116,16 @@ class SignagePlayer(xbmc.Player):
     """Playback monitor. The return-to-idle path is local and immediate —
     spec 7.5: no server round-trip, no Kodi UI between last frame and idle."""
 
-    def __init__(self, on_return_to_idle):
+    def __init__(self, on_return_to_idle, on_av_started=None):
         super().__init__()
         self._on_return_to_idle = on_return_to_idle
+        self._on_av_started = on_av_started
         self.playing = False
 
     def onAVStarted(self):
         self.playing = True
-        log(f"playback started  t={time.perf_counter():.3f}")
+        if self._on_av_started:
+            self._on_av_started()
 
     def onPlayBackEnded(self):
         self._finish("ended")
@@ -145,12 +140,11 @@ class SignagePlayer(xbmc.Player):
         was_playing = self.playing
         self.playing = False
         if was_playing:
-            log(f"playback {why}  t={time.perf_counter():.3f} -> idle already resident")
             self._on_return_to_idle()
 
 
 class IdleController:
-    """Owns the idle presentation, local-mode slideshow, and PoC test actions."""
+    """Owns the idle presentation and local-mode content."""
 
     def __init__(self, config, player):
         self.config = config
@@ -160,34 +154,130 @@ class IdleController:
         self.content_pending = False      # start content once the window is up
         self.content_due = 0.0
         self.maintenance = False
-        self.armed = False
         self._last_back = 0.0
         self.slideshow_files = []
         self.video_files = []
-        self._slide_index = 0
+        self.sequence = []              # interleaved play order (dicts)
+        self._seq_pos = -1              # index into sequence
+        self._seq_playing = False       # a sequence video is in flight
+        self._seq_ended_since = None    # sustained-silence detector
+        self._last_play_time = None     # player clock, stall detection
+        self._stall_since = None        # when the frozen clock began
+        self._pl_base = 0               # playlist idx 0 maps to this pos
+        self._seq_started = 0.0         # when the current item began
+        self._previewing = False        # preview interrupted the sequence
         self._slide_next = 0.0
+        self._promo_files = []          # feature cards for empty playlists
+        self._promo_index = 0
+        self.armed = False              # conductor: staged, awaiting "go"
+        self._arm_pending = False       # pause the moment a video opens
+        self._pair_dialog = False   # on-TV pair confirm currently showing
+        self._pending_refresh = False  # content change waits for a boundary
+        self._pulls_inflight = 0    # server pulls still downloading
+        self._pull_settle = None    # batch settle deadline before flagging
         self.rescan_media()
 
     # -- idle presentation -------------------------------------------------
 
     def rescan_media(self):
-        """Collect image and video files from the local media folder (Local mode)."""
+        """Build the effective playlist: media-folder files plus remote URL
+        entries, in playlist order, skipping disabled items and items
+        whose schedule doesn't match right now."""
         self.slideshow_files = []
         self.video_files = []
-        folder = self.config.get("local_media_folder") or ""
-        if self.config.get("player_mode") != 0 or not folder:
-            return
+        state = medialist.load_state()
+        self._media_state = state
+        disabled = set(state["disabled"])
+        scheds = state["schedules"]
+
+        def active(name):
+            return name not in disabled and medialist.schedule_active(
+                scheds.get(name)
+            )
+
+        paths = {}   # display name -> playable path or URL
+        kinds = {}   # display name -> "video" | "image"
+        # Managed displays play the server cache folder; local displays
+        # the configured local folder. Both fall back to the built-in dir.
+        if self.config.get("player_mode") == 1:
+            folder = (
+                self.config.get("server_media_dir")
+                or medialist.DEFAULT_MEDIA_DIR
+            )
+        else:
+            folder = (
+                self.config.get("local_media_folder")
+                or medialist.DEFAULT_MEDIA_DIR
+            )
+        if folder:
+            try:
+                folder = resolve_path(folder)
+                for n in os.listdir(folder):
+                    if not os.path.isfile(os.path.join(folder, n)):
+                        continue
+                    ext = os.path.splitext(n)[1].lower()
+                    if ext in VIDEO_EXTS:
+                        kinds[n] = "video"
+                    elif ext in IMAGE_EXTS:
+                        kinds[n] = "image"
+                    else:
+                        continue
+                    paths[n] = os.path.join(folder, n)
+            except OSError as e:
+                log(f"media folder not listable ({folder}): {e}")
+        for u in state["urls"]:
+            ext = os.path.splitext(u["url"].split("?")[0])[1].lower()
+            kinds[u["name"]] = "image" if ext in IMAGE_EXTS else "video"
+            paths[u["name"]] = u["url"]
+
+        # Catalog = every known item in stored order (pre-active filter) —
+        # the proxied admin API lists disabled/scheduled-off items too.
+        names_all = medialist.sort_names(list(paths), state)
+        url_names = {u["name"] for u in state["urls"]}
+        self.catalog = []
+        for n in names_all:
+            size = None
+            if n not in url_names:
+                try:
+                    size = os.path.getsize(paths[n])
+                except OSError:
+                    pass
+            self.catalog.append(
+                {"name": n, "kind": kinds[n],
+                 "remote": n in url_names, "size": size}
+            )
+        names = [n for n in names_all if active(n)]
+        # Manifest touch: playlist members stay hot in the cache —
+        # evictions expire least-recently-touched orphans first. The cap
+        # only applies to the managed cache, never the local folder.
+        medialist.touch_manifest(names_all)
+        if self.config.get("player_mode") == 1:
+            medialist.enforce_cache_limit(
+                folder,
+                (self.config.get("cache_max_mb") or 0) * 1048576,
+            )
+        # Unified interleaved sequence — the playlist order is honored
+        # across types (img, vid, img plays exactly in that order). The
+        # split lists are kept for status/UI counts.
+        self.sequence = [
+            {"name": n, "kind": kinds[n], "path": paths[n]} for n in names
+        ]
+        for n in names:
+            (self.video_files if kinds[n] == "video"
+             else self.slideshow_files).append(paths[n])
+        self._name_of = {paths[n]: n for n in names}
         try:
-            names = sorted(os.listdir(resolve_path(folder)))
-            folder = resolve_path(folder)
-            for n in names:
-                ext = os.path.splitext(n)[1].lower()
-                if ext in IMAGE_EXTS:
-                    self.slideshow_files.append(os.path.join(folder, n))
-                elif ext in VIDEO_EXTS:
-                    self.video_files.append(os.path.join(folder, n))
-        except OSError as e:
-            log(f"media folder not listable ({folder}): {e}")
+            self._promo_files = sorted(
+                os.path.join(PROMO_DIR, n)
+                for n in os.listdir(PROMO_DIR)
+                if n.lower().startswith("promo")
+                and n.lower().endswith(".png")
+            )
+        except OSError:
+            self._promo_files = []
+        self._promo_index = min(
+            self._promo_index, max(len(self._promo_files) - 1, 0)
+        )
         log(
             f"media scan: {len(self.video_files)} video(s), "
             f"{len(self.slideshow_files)} image(s) in {folder}"
@@ -195,37 +285,219 @@ class IdleController:
 
     def request_content(self, delay=4.0):
         """Queue local content; it starts once the idle window is resident so
-        video always opens over it (never the idle window over video)."""
+        video always opens over it (never the idle window over video). Once
+        the window is up, a short settle is enough — a long wait just shows
+        the (often black) underlay between items."""
         self.content_pending = True
+        if self.window_open:
+            delay = min(delay, 0.75)
         self.content_due = time.perf_counter() + delay
 
+    # -- deferred content updates ------------------------------------------
+    # Edits, reorders and pushed media never cut playback mid-piece: the
+    # change is queued and applies at the next natural item boundary —
+    # the current video ends or the image timer expires. Server pushes
+    # land on background threads and only queue the flag once the whole
+    # batch has settled.
+
+    def defer_content_refresh(self):
+        """Queue a content update for the next item boundary so the
+        current piece finishes seamlessly."""
+        self._pending_refresh = True
+        log("content update queued for the next item boundary")
+
+    def _apply_pending_refresh(self, just_ended=None):
+        """Boundary reached — rescan, then continue the flow from the
+        just-finished item's new position (restart if it was removed).
+        For videos the next image is already preloaded beneath, so the
+        cut stays seamless."""
+        self._pending_refresh = False
+        self.rescan_media()
+        if not self.sequence:
+            self._seq_playing = False
+            self.refresh_view()
+            return
+        idx = -1
+        if just_ended:
+            idx = next(
+                (i for i, s in enumerate(self.sequence)
+                 if s["name"] == just_ended),
+                -1,
+            )
+        self._seq_pos = idx
+        self._advance_seq()
+
+    def pull_started(self):
+        self._pulls_inflight += 1
+        self._pull_settle = None
+
+    def pull_finished(self):
+        self._pulls_inflight = max(0, self._pulls_inflight - 1)
+        if not self._pulls_inflight:
+            # Pushes arrive as a batch — the update queues only once the
+            # last file has landed, after a short settle window.
+            self._pull_settle = time.perf_counter() + 3.0
+
     def start_content(self):
-        """Local-mode content entry point: loop the folder's videos if any,
-        otherwise just refresh the idle presentation (slideshow/color)."""
+        """Local-mode content entry point: start the unified playlist
+        sequence, or just refresh the idle presentation if it's empty."""
         self.content_pending = False
-        if self.video_files:
-            playlist = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
-            playlist.clear()
-            for path in self.video_files:
-                playlist.add(path)
-            self.player.play(playlist)
-            xbmc.executebuiltin("PlayerControl(RepeatAll)")
-            log(f"local playlist: {len(self.video_files)} video(s), RepeatAll")
+        self.armed = False
+        if self.sequence:
+            self._seq_pos = -1
+            self._advance_seq()
+            log(f"playlist sequence: {len(self.sequence)} item(s)")
         else:
             self.refresh_view()
 
+    def _seq_duration(self, item):
+        """How long an image item stays up — per-item duration wins,
+        then the 20s default. Videos play to their natural end."""
+        dur = (getattr(self, "_media_state", None) or {}).get(
+            "durations", {}
+        ).get(item["name"], DEFAULT_SLIDE_SECONDS)
+        return max(float(dur or DEFAULT_SLIDE_SECONDS), 1.0)
+
+    def _play_seq(self):
+        """Start the sequence item at _seq_pos: videos play fullscreen
+        once (end-of-playback advances the sequence); images render on
+        the resident idle window for their duration."""
+        if not (0 <= self._seq_pos < len(self.sequence)):
+            return
+        item = self.sequence[self._seq_pos]
+        self._seq_started = time.perf_counter()
+        if item["kind"] == "video":
+            self._seq_playing = True
+            seq = self.sequence
+            # Chain every consecutive video (wraparound-aware) into one
+            # Kodi playlist — the player then transitions internally with
+            # zero reveal. The chain stops at the first image; that image
+            # is preloaded under the last video in on_av_started.
+            pl = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
+            pl.clear()
+            pl.add(item["path"])
+            n = (self._seq_pos + 1) % len(seq)
+            while n != self._seq_pos and seq[n]["kind"] == "video":
+                pl.add(seq[n]["path"])
+                n = (n + 1) % len(seq)
+            self._pl_base = self._seq_pos   # playlist index 0 == this pos
+            # Underlay for the load gap only. A staged playlist image
+            # holds on screen until the first frame — artwork is always a
+            # fine interstitial, even when the previous item differs
+            # (restarts jump positions). Anything else — standby card,
+            # promo, cleared — gets a clean black cut.
+            holding = (
+                self.window_open
+                and self.window._last_img in self._name_of
+            )
+            if self.window_open and not holding:
+                self.window.clear_idle_image()
+            self.player.play(pl)
+            log(f"seq {self._seq_pos + 1}/{len(self.sequence)} video: {item['name']}")
+        else:
+            self._seq_playing = False
+            if self.window_open:
+                self.window.set_idle_image(item["path"])
+            self._slide_next = self._seq_started + self._seq_duration(item)
+            log(f"seq {self._seq_pos + 1}/{len(self.sequence)} image: {item['name']}")
+
+    def _advance_seq(self, delta=1):
+        if not self.sequence:
+            self._seq_playing = False
+            return
+        self._seq_pos = (self._seq_pos + delta) % len(self.sequence)
+        self._play_seq()
+
     def return_to_idle(self):
-        """Called when playback finishes. With the window engine the idle
-        window is still resident beneath the video window — Kodi reveals it
-        instantly, so there is nothing to re-show here. (Engine 'picture'
-        still needs a manual fallback.)"""
-        if self.config["idle_engine"] == 1:
-            deadline = time.perf_counter() + 1.5
-            while time.perf_counter() < deadline:
-                if self.player.playing:
-                    return
-                xbmc.sleep(50)
-            self._show_picture()
+        """Called when playback finishes. The idle window is still resident
+        beneath the video window — Kodi reveals it instantly, so there is
+        nothing to re-show here."""
+
+    # -- conductor (managed mode) ------------------------------------------
+
+    def arm(self):
+        """Stage the sequence at item 0 and hold: a video opens paused on
+        its first frame (the monitor pauses it on AV start), an image is
+        shown statically. tick() does not advance while armed — 'go'
+        releases every staged display at once."""
+        self.rescan_media()
+        self.armed = bool(self.sequence)
+        if not self.armed:
+            self.refresh_view()     # empty playlist -> promo cards
+            return
+        self._previewing = False
+        self._seq_pos = 0
+        self._seq_started = time.perf_counter()
+        item = self.sequence[0]
+        if item["kind"] == "video":
+            self._arm_pending = True
+            self._seq_playing = True
+            if self.window_open:
+                self.window.clear_idle_image()
+            self.player.play(item["path"])
+            xbmc.executebuiltin("PlayerControl(RepeatOff)")
+        else:
+            self._seq_playing = False
+            if self.window_open:
+                self.window.set_idle_image(item["path"])
+        log(f"conductor arm — staged {item['name']}")
+
+    def go(self):
+        """Release the armed sequence: resume a staged video or start the
+        staged image's timer. With nothing staged it just restarts
+        content."""
+        if not self.armed:
+            self.request_content()
+            return
+        self.armed = False
+        if self._seq_playing:
+            if self.player.playing and xbmc.getCondVisibility(
+                "Player.Paused"
+            ):
+                self.player.pause()      # resume the staged video
+            elif not self.player.playing:
+                self._seq_playing = False
+                self._play_seq()         # staged video never opened
+        elif 0 <= self._seq_pos < len(self.sequence):
+            self._slide_next = (
+                time.perf_counter()
+                + self._seq_duration(self.sequence[self._seq_pos])
+            )
+        log("conductor go — sequence released")
+
+    def on_av_started(self):
+        """Fired by the player monitor on AV start: an armed video pauses
+        on its first frame so 'go' is the only thing that moves it."""
+        if self._arm_pending:
+            self._arm_pending = False
+            self.player.pause()
+            log("armed video paused on first frame")
+        if self._seq_playing and not self._previewing and self.sequence:
+            pl = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
+            plpos = pl.getposition()
+            if plpos >= 0:
+                # A chained playlist advanced internally — sync the
+                # engine's position without re-playing anything.
+                self._seq_pos = (self._pl_base + plpos) % len(
+                    self.sequence
+                )
+                self._seq_started = time.perf_counter()
+                if plpos == pl.size() - 1:
+                    # Last video of the chain: preload the next item under
+                    # it so the end-of-playback reveal is instant.
+                    after = self.sequence[
+                        (self._seq_pos + 1) % len(self.sequence)
+                    ]
+                    if after["kind"] == "image" and self.window_open:
+                        self.window.set_idle_image(after["path"])
+            # PlayerControl only takes effect on a live player — calling
+            # it before play() is a no-op, so repeat mode is set here.
+            # A chain covering the whole sequence (all-video) loops
+            # internally forever: zero-gap, including wraparound.
+            if pl.size() >= len(self.sequence):
+                xbmc.executebuiltin("PlayerControl(RepeatAll)")
+            else:
+                xbmc.executebuiltin("PlayerControl(RepeatOff)")
 
     def run_idle(self, abort_check):
         """Blocking: open the idle window modally and keep it resident. The
@@ -234,9 +506,7 @@ class IdleController:
 
         Refuses to open while video is on top: activating a modal window
         would cover the playing video. Waits until playback is done instead."""
-        if self.config["idle_engine"] == 1 or self.maintenance:
-            if self.config["idle_engine"] == 1:
-                self._show_picture()
+        if self.maintenance:
             xbmc.sleep(500)
             return
         waited = 0.0
@@ -247,19 +517,52 @@ class IdleController:
         win.on_action = self._on_window_action
         win.config = self._view_config()
         self.window = win
-        self._slide_next = time.perf_counter() + self.config["slideshow_seconds"]
+        self._slide_next = time.perf_counter() + DEFAULT_SLIDE_SECONDS
         self.window_open = True
-        log(f"idle shown (window) t={time.perf_counter():.3f}")
         win.doModal()  # returns when exit_to_kodi()/shutdown closes it
         self.window_open = False
         self.window = None
 
     def _view_config(self):
         cfg = dict(self.config)
-        if self.slideshow_files:
+        cur = (
+            self.sequence[self._seq_pos]
+            if 0 <= self._seq_pos < len(self.sequence) else None
+        )
+        if cur and cur["kind"] == "image":
             cfg["idle_type"] = 1
-            cfg["image_path"] = self.slideshow_files[self._slide_index]
+            cfg["image_path"] = cur["path"]
+        elif not self.sequence:
+            if self.config.get("player_mode") == 1 \
+                    and os.path.exists(STANDBY_IMG):
+                # Managed + nothing queued — static dimmed brand standby.
+                cfg["idle_type"] = 1
+                cfg["image_path"] = STANDBY_IMG
+            elif self._promo_files:
+                # Empty playlist — a feature promo is always better than
+                # a bare color field.
+                cfg["idle_type"] = 1
+                cfg["image_path"] = self._promo_files[self._promo_index]
+        else:
+            # Video item current — solid background only, so the open
+            # latency between items shows a cut, not a logo flash.
+            cfg["idle_type"] = 0
         return cfg
+
+    def current_name(self):
+        """Name of the playlist item on screen — the playing file for
+        videos, the shown image for image items."""
+        try:
+            cur = self.player.getPlayingFile() or ""
+            if cur:
+                return os.path.basename(cur)
+        except Exception:
+            pass
+        if 0 <= self._seq_pos < len(self.sequence):
+            item = self.sequence[self._seq_pos]
+            if item["kind"] == "image" and self.window_open:
+                return item["name"]
+        return ""
 
     def idle_visible(self):
         """Is our idle window currently the active window?"""
@@ -274,84 +577,191 @@ class IdleController:
         if self.window is not None:
             self.window.close()
 
-    def _show_picture(self):
-        # Comparison engine: Kodi's built-in picture viewer. Keys cannot be
-        # intercepted here — see README for what this proves/disproves.
-        if self.config["idle_type"] == 1 and self.config["image_path"]:
-            source = resolve_path(self.config["image_path"])
-        else:
-            source = SOLID_PNG
-        xbmc.executebuiltin(f"ShowPicture({source})")
-        log(f"idle shown (picture) t={time.perf_counter():.3f}")
-
     def tick(self):
-        """Periodic work: advance the slideshow when due."""
+        """Periodic work: advance the slideshow when due, and re-scan on a
+        timer while any item carries a time-window schedule so entries
+        appear/disappear on their boundaries."""
+        # The media manager window reads this to mark the playing row —
+        # covers images (no player file) as well as videos.
+        HOME.setProperty("screensemble.now", self.current_name())
+        # Server pushes download in the background — the content update
+        # only queues once the batch has settled (nothing in flight, and
+        # a short grace so back-to-back files count as one batch).
         if (
-            not self.window_open
-            or self.player.playing
-            or len(self.slideshow_files) < 2
-            or time.perf_counter() < self._slide_next
+            self._pull_settle
+            and not self._pulls_inflight
+            and time.perf_counter() >= self._pull_settle
         ):
-            return
-        self._show_slide((self._slide_index + 1) % len(self.slideshow_files))
+            self._pull_settle = None
+            self.defer_content_refresh()
 
-    def _show_slide(self, index):
-        self._slide_index = index
-        if self.window_open:
-            self.window.set_idle_image(self.slideshow_files[index])
-        self._slide_next = time.perf_counter() + self.config["slideshow_seconds"]
+        state = getattr(self, "_media_state", None) or {}
+        if (
+            medialist.has_schedules(state)
+            and time.perf_counter() >= getattr(self, "_sched_next", 0.0)
+        ):
+            self._sched_next = time.perf_counter() + 30.0
+            before = list(self.sequence)
+            cur_name = (
+                self.sequence[self._seq_pos]["name"]
+                if 0 <= self._seq_pos < len(self.sequence) else None
+            )
+            self.rescan_media()
+            if self.sequence != before:
+                log("schedule boundary — content set changed, queued")
+                # Keep _seq_pos honest under the new order, then let the
+                # current piece finish before the change takes effect.
+                if cur_name:
+                    self._seq_pos = next(
+                        (i for i, s in enumerate(self.sequence)
+                         if s["name"] == cur_name),
+                        -1,
+                    )
+                self.defer_content_refresh()
+
+        # A preview interrupted the sequence — resume it once the preview
+        # ends (video stops, or the image's minute is up).
+        if self._previewing:
+            if (
+                not self.player.playing
+                and time.perf_counter() >= self._slide_next
+            ):
+                self._previewing = False
+                self.request_content()
+            return
+
+        # Nothing playing — a queued update applies immediately.
+        if self._pending_refresh and not self.sequence:
+            self._apply_pending_refresh()
+
+        if not self.sequence:
+            # Empty playlist — local mode rotates the feature promos;
+            # managed mode holds the static standby card (_view_config).
+            if (
+                self.window_open
+                and not self.maintenance
+                and not self.player.playing
+                and self._promo_files
+                and self.config.get("player_mode") != 1
+                and time.perf_counter() >= self._slide_next
+            ):
+                self._promo_index = (
+                    (self._promo_index + 1) % len(self._promo_files)
+                )
+                self.window.set_idle_image(
+                    self._promo_files[self._promo_index]
+                )
+                self._slide_next = time.perf_counter() + PROMO_SECONDS
+            return
+        if self.armed:
+            return                      # conductor hold until "go"
+        if not self.window_open or self.maintenance:
+            return
+        if self._seq_playing:
+            # Video item ended — or never started. Playlist-internal
+            # transitions (chained videos, RepeatAll boundaries) report
+            # not-playing for a fraction of a second, so only sustained
+            # silence counts as a real end; the next image is already
+            # preloaded beneath, so this hold never shows a gap.
+            if self.player.playing:
+                self._seq_ended_since = None
+                # Stall watchdog: a live player whose clock hasn't moved
+                # in ~8s is hung (network stall, decoder wedge) — stop it
+                # and let the silence path advance. Paused playback is
+                # deliberate, not a stall.
+                paused = xbmc.getCondVisibility("Player.Paused")
+                t = None
+                if not paused:
+                    try:
+                        t = self.player.getTime()
+                    except RuntimeError:
+                        pass
+                now = time.perf_counter()
+                if t is not None:
+                    if (
+                        self._last_play_time is not None
+                        and abs(t - self._last_play_time) < 0.05
+                    ):
+                        self._stall_since = self._stall_since or now
+                        if now - self._stall_since > 8.0:
+                            log("video stalled >8s — skipping item")
+                            self._stall_since = None
+                            self._last_play_time = None
+                            try:
+                                self.player.stop()
+                            except Exception:
+                                pass
+                    else:
+                        self._stall_since = None
+                    self._last_play_time = t
+            else:
+                now = time.perf_counter()
+                if self._seq_ended_since is None:
+                    self._seq_ended_since = now
+                elif (
+                    now - self._seq_ended_since > 2.0
+                    and now - self._seq_started > 3.0
+                ):
+                    self._seq_ended_since = None
+                    if self._pending_refresh:
+                        self._apply_pending_refresh(
+                            self.sequence[self._seq_pos]["name"]
+                            if 0 <= self._seq_pos < len(self.sequence)
+                            else None
+                        )
+                    else:
+                        self._advance_seq()
+            return
+        cur = (
+            self.sequence[self._seq_pos]
+            if 0 <= self._seq_pos < len(self.sequence) else None
+        )
+        if (
+            cur
+            and cur["kind"] == "image"
+            and not self.player.playing
+            and time.perf_counter() >= self._slide_next
+        ):
+            if self._pending_refresh:
+                self._apply_pending_refresh(cur["name"])
+            else:
+                self._advance_seq()
 
     def slide_skip(self, direction):
-        """D-pad manual skip: right/down = next, left/up = previous."""
-        if len(self.slideshow_files) < 2 or not self.window_open:
+        """D-pad manual skip: right/down = next, left/up = previous —
+        moves the whole sequence, not just images."""
+        if not self.sequence or not self.window_open or self.maintenance:
             return
-        self._show_slide((self._slide_index + direction) % len(self.slideshow_files))
-        log(f"slide {self._slide_index + 1}/{len(self.slideshow_files)} (manual)")
+        if self._seq_playing and self.player.playing:
+            self.player.stop()
+            self._seq_playing = False
+        self._advance_seq(direction)
+        log(f"skip -> seq {self._seq_pos + 1}/{len(self.sequence)} (manual)")
 
     # -- input -------------------------------------------------------------
     # Everything here must work with a plain D-pad remote (Android TV etc.):
     #
-    #   OK / Select / Play   play the configured test video fullscreen
-    #   Menu / Info          open the actions menu (all PoC functions)
-    #   Pause                "go" — resume armed/paused playback
-    #   Back x2              exit to the Kodi UI (resume via addon menu)
-    #
-    # Keyboard letters (P/A/G/M) kept as equivalents for desktop testing.
+    #   OK / Select / Play / Menu   open the actions menu
+    #   D-pad left/right / up/down  skip through the playlist
+    #   Back x2                     exit to the Kodi UI
 
     def _on_window_action(self, action):
         aid = action.getId()
-        btn = action.getButtonCode()
         if aid in BACK_ACTIONS:
             self._handle_back()
         elif aid in MENU_ACTIONS:
             self._open_actions_menu()
-        elif aid in PAUSE_ACTIONS:
-            self.resume()
         elif aid in (xbmcgui.ACTION_MOVE_RIGHT, xbmcgui.ACTION_MOVE_DOWN):
             self.slide_skip(1)
         elif aid in (xbmcgui.ACTION_MOVE_LEFT, xbmcgui.ACTION_MOVE_UP):
             self.slide_skip(-1)
-        elif (
-            aid in (xbmcgui.ACTION_SELECT_ITEM,)
-            or aid in PLAY_ACTIONS
-            or aid == letter_key("p")
-            or btn == ord("p")
-        ):
-            self.play_test_video()
-        elif aid == letter_key("a") or btn == ord("a"):
-            self.arm_test_video()
-        elif aid == letter_key("g") or btn == ord("g"):
-            self.resume()
-        elif aid == letter_key("m") or btn == ord("m"):
-            self.exit_to_kodi()
+        elif aid in (xbmcgui.ACTION_SELECT_ITEM,) or aid in PLAY_ACTIONS:
+            self._open_actions_menu()
         # every other action is swallowed — IdleWindow.onAction never calls
         # the base implementation, so navigation cannot close the window.
 
     def _open_actions_menu(self):
         actions = [
-            ("Play test video", self.play_test_video),
-            ("Arm (play + pause)", self.arm_test_video),
-            ("Go (resume playback)", self.resume),
             ("Restart local content", self.start_content),
             ("Exit to Kodi UI", self.exit_to_kodi),
         ]
@@ -367,41 +777,33 @@ class IdleController:
             self._last_back = now
             notify("Press back again to exit Screensemble")
 
-    # -- PoC test actions ---------------------------------------------------
+    # -- preview ------------------------------------------------------------
 
-    def play_test_video(self):
-        path = resolve_path(self.config["test_video"])
+    def play_item(self, name):
+        """Preview a single playlist entry (web admin Play button): videos
+        play fullscreen once; images show on the idle screen for a minute."""
+        state = getattr(self, "_media_state", None) or medialist.load_state()
+        url = next((u["url"] for u in state["urls"] if u["name"] == name), None)
+        folder = resolve_path(
+            self.config.get("local_media_folder") or medialist.DEFAULT_MEDIA_DIR
+        )
+        path = url or (os.path.join(folder, name) if folder and name else "")
         if not path:
-            notify("No test video configured (addon settings)", xbmcgui.NOTIFICATION_WARNING)
             return
-        log(f"play test video: {path}")
+        ext = os.path.splitext(path.split("?")[0])[1].lower()
         self.armed = False
-        self.player.play(path)
-        # RepeatAll from a folder loop is player-level — disable it so a
-        # single test clip ends naturally and returns to idle.
-        xbmc.executebuiltin("PlayerControl(RepeatOff)")
-
-    def arm_test_video(self):
-        path = resolve_path(self.config["test_video"])
-        if not path:
-            notify("No test video configured (addon settings)", xbmcgui.NOTIFICATION_WARNING)
-            return
-        log(f"ARM: play+pause {path} — watch for a first-frame flash over idle")
-        self.player.play(path)
-        xbmc.executebuiltin("PlayerControl(RepeatOff)")
-        for _ in range(200):
-            if self.player.isPlaying():
-                break
-            xbmc.sleep(5)
-        self.player.pause()
-        self.armed = True
-        log("ARMED (paused). Press G to resume.")
-
-    def resume(self):
-        if self.player.isPlaying():
-            self.player.pause()
-            self.armed = False
-            log("GO: resumed playback")
+        self._previewing = True       # tick() resumes the sequence after
+        self._seq_playing = False
+        if ext in IMAGE_EXTS:
+            if self.window_open:
+                self.window.set_idle_image(path)
+                self._slide_next = time.perf_counter() + 60.0
+                log(f"preview image: {name}")
+        else:
+            self._slide_next = 0.0
+            self.player.play(path)
+            xbmc.executebuiltin("PlayerControl(RepeatOff)")
+            log(f"preview video: {name}")
 
     def exit_to_kodi(self):
         self.maintenance = True
@@ -424,12 +826,80 @@ class IdleController:
             self.window.apply()
 
 
+def pair_prompt(controller, monitor):
+    """Runs on its own thread (dialog blocks until answered): the web /pair
+    endpoint parked a server offer — the human confirms or cancels on the
+    TV remote itself. OK applies server mode; Cancel drops the offer."""
+    url = HOME.getProperty(PROP_PAIR_URL)
+    auth = HOME.getProperty(PROP_PAIR_AUTH)
+    try:
+        info = json.loads(HOME.getProperty(PROP_PAIR_INFO) or "{}")
+    except ValueError:
+        info = {}
+    # WHO is asking — server's /api/info if it answered, else just the URL.
+    lines = ["Allow this server to manage the display?", ""]
+    if info.get("name"):
+        ver = info.get("version")
+        lines.append(str(info["name"]) + (f"  (v{ver})" if ver else ""))
+    if info.get("owner"):
+        lines.append(f"Owner: {info['owner']}")
+    if info.get("info"):
+        lines.append(str(info["info"]))
+    lines.append(url)
+    try:
+        ok = xbmcgui.Dialog().yesno(
+            "Screensemble pairing",
+            "\n".join(lines),
+            nolabel="Cancel",
+            yeslabel="Pair",
+        )
+    except Exception as e:
+        log(f"pair prompt failed: {e}")
+        ok = False
+    pairing_id = HOME.getProperty(PROP_PAIR_ID)
+    HOME.clearProperty(PROP_PAIR_URL)
+    HOME.clearProperty(PROP_PAIR_AUTH)
+    HOME.clearProperty(PROP_PAIR_INFO)
+    HOME.clearProperty(PROP_PAIR_ID)
+    if ok:
+        # Tell the server the human confirmed — it registers us as a player.
+        if pairing_id:
+            resp, err = post_json(url, "/api/pair/accept", {"pairing_id": pairing_id})
+            if err or not (resp or {}).get("ok"):
+                log(f"pair accept notify failed: {err or resp}")
+        addon = xbmcaddon.Addon()
+        addon.setSetting("server_address", url)
+        addon.setSetting("server_auth_token", auth)
+        addon.setSetting("paired_id", pairing_id or "")
+        addon.setSettingInt("player_mode", 1)
+        addon.setSettingBool("setup_complete", True)
+        monitor.dirty = True
+        log(f"paired to server {url}")
+        notify(f"Paired — managed by {url}")
+    else:
+        if pairing_id:
+            post_json(url, "/api/pair/decline", {"pairing_id": pairing_id})
+        log("pairing declined on TV")
+        notify("Pairing declined")
+    controller._pair_dialog = False
+
+
 def poll_loop(monitor, controller):
     """Background thread: commands, live settings, setup completion, pending
     content, and the slideshow timer. The main thread is blocked inside the
     idle window's doModal() loop."""
     player = controller.player
+    was_fullscreen = False
     while not monitor.abortRequested():
+        # Leaving fullscreen video while it still plays in the background
+        # (what Back does in stock Kodi) means "stop" for signage — this
+        # gives Back=Stop behavior without a user keymap.
+        fs = xbmc.getCondVisibility("Window.IsActive(fullscreenvideo)")
+        if was_fullscreen and not fs and player.isPlaying():
+            player.stop()
+            log("left fullscreen video with playback running — stopped")
+        was_fullscreen = fs
+
         # Command channel from the script entry point (Programs > Screensemble).
         cmd = HOME.getProperty(COMMAND_PROPERTY)
         if cmd:
@@ -438,43 +908,58 @@ def poll_loop(monitor, controller):
                 controller.resume_from_menu()
             elif cmd == COMMAND_RELOAD:
                 monitor.dirty = True
-            elif cmd == "play_test":
-                # Bring the idle screen up first if the user is in the Kodi
-                # UI — the video must land back on idle when it ends.
-                if controller.maintenance:
-                    controller.resume_from_menu(with_content=False)
-                deadline = time.perf_counter() + 4.0
-                while (
-                    controller.config["idle_engine"] == 0
-                    and not controller.window_open
-                    and not controller.maintenance
-                    and time.perf_counter() < deadline
-                ):
-                    xbmc.sleep(50)
-                controller.play_test_video()
             elif cmd == "stop":
                 if player.isPlaying():
                     player.stop()
+            elif cmd == "update":
+                controller.defer_content_refresh()
             elif cmd == "restart":
                 controller.rescan_media()
                 controller.request_content()
+            elif cmd.startswith("play:"):
+                controller.play_item(cmd[5:])
+
+        # Pairing offer from the web /pair endpoint — confirmed on the TV.
+        if HOME.getProperty(PROP_PAIR_URL) and not controller._pair_dialog:
+            controller._pair_dialog = True
+            threading.Thread(
+                target=pair_prompt, args=(controller, monitor), daemon=True
+            ).start()
 
         # Live settings changes (folder changed, slideshow interval, colors).
         if monitor.dirty:
             monitor.dirty = False
+            was_setup = controller.config["setup_complete"]
             config = load_config()
-            ensure_runtime_assets(config["idle_color"])
+            ensure_runtime_assets()
+            remove_legacy_keymap()
             controller.config = config
-            controller.rescan_media()
+            controller.defer_content_refresh()
             controller.refresh_view()
-            log("settings reloaded")
+            # The wizard's setSetting arrives through this path too — detect
+            # the False->True flip here or content never gets queued.
+            if config["setup_complete"] and not was_setup:
+                controller.request_content()
+                log("setup complete — content queued")
+            else:
+                log("settings reloaded")
+            # Pairing flips the mode at runtime — bring the server link up
+            # without waiting for a restart.
+            if config["player_mode"] == 1 and not getattr(
+                controller, "_link", None
+            ):
+                from link import ServerLink
+
+                controller._link = ServerLink(controller)
+                controller._link.start()
+                log("managed mode — server link started")
 
         if not controller.config["setup_complete"]:
             # Poll for wizard completion; then bring the idle presentation up.
             # Fresh Addon() — the cached instance misses script-instance writes.
             if xbmcaddon.Addon().getSettingBool("setup_complete"):
                 config = load_config()
-                ensure_runtime_assets(config["idle_color"])
+                ensure_runtime_assets()
                 controller.config = config
                 controller.rescan_media()
                 controller.request_content()
@@ -499,23 +984,66 @@ def main():
         f"(device={config['device_name']!r} mode={config['player_mode']} "
         f"server={config['server_address']!r} setup={config['setup_complete']})"
     )
-    ensure_runtime_assets(config["idle_color"])
-    install_keymap()
+    ensure_runtime_assets()
+    remove_legacy_keymap()
 
     # Unattended signage: never let Kodi's own screensaver/dim take over
     # the display. Released again in the shutdown path.
     xbmc.executebuiltin("InhibitScreensaver(true)")
 
     monitor = SettingsMonitor()
-    controller = IdleController(config, SignagePlayer(lambda: controller.return_to_idle()))
+    controller = IdleController(
+        config,
+        SignagePlayer(
+            lambda: controller.return_to_idle(),
+            lambda: controller.on_av_started(),
+        ),
+    )
 
     if config["setup_complete"]:
-        controller.request_content()
+        # Content waits until the splash has had its moment.
+        controller.request_content(delay=config["splash_seconds"] + 2.0)
     else:
         log("setup not complete — staying hidden until the wizard runs")
 
     worker = threading.Thread(target=poll_loop, args=(monitor, controller), daemon=True)
     worker.start()
+
+    # Local-mode web admin: settings, uploads, transport control over LAN.
+    web = None
+    if config["web_admin"] and config["player_mode"] == 0:
+        try:
+            web = AdminServer(
+                controller,
+                xbmcaddon.Addon(),
+                on_settings_saved=lambda: setattr(monitor, "dirty", True),
+                port=config["web_port"],
+            )
+            web.start()
+        except OSError as e:
+            web = None
+            log(f"web admin failed to start: {e}")
+
+    # Managed mode: the display dials the server and holds a persistent
+    # WebSocket — status goes up, commands come down. Works across the
+    # internet; no inbound listener needed on the display's network.
+    link = None
+    if config["player_mode"] == 1:
+        from link import ServerLink
+
+        link = controller._link = ServerLink(controller)
+        link.start()
+        log("managed mode — server link started")
+
+    # Boot splash: brand + admin/server info before content begins.
+    if config["setup_complete"] and config["splash_seconds"] > 0:
+        try:
+            splash = SplashWindow("splash.xml", ADDON_PATH, "Default", "1080i")
+            splash.config = config
+            splash.web_enabled = web is not None
+            splash.show_for(config["splash_seconds"])
+        except Exception as e:
+            log(f"splash failed: {e}")
 
     # Main thread: keep the idle window modally resident. doModal() blocks
     # until the window is closed (exit_to_kodi or shutdown), then we either
@@ -537,6 +1065,10 @@ def main():
             break
 
     log("service stopping")
+    if web is not None:
+        web.stop()
+    if link is not None:
+        link.stop()
     controller.close_idle()
     xbmc.executebuiltin("InhibitScreensaver(false)")
 

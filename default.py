@@ -20,7 +20,6 @@ PICK_HEADINGS = {
     "local_media_folder": "Choose the media folder",
     "server_media_dir": "Choose the cache folder for server media",
     "idle_image": "Choose the idle image",
-    "test_video": "Choose the test video",
 }
 
 
@@ -42,32 +41,56 @@ def main():
         pick(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 0)
         return
 
-    if len(sys.argv) > 1 and sys.argv[1] == "command":
-        # Settings action buttons -> signal the running service, then close
-        # the settings dialog so the result is visible immediately.
-        HOME.setProperty(COMMAND_PROPERTY, sys.argv[2])
-        xbmc.executebuiltin("Dialog.Close(all,true)")
+    from wizard import run_wizard
+
+    if len(sys.argv) > 1 and sys.argv[1] == "wizard":
+        run_wizard()
         return
 
-    from wizard import run_wizard
+    if len(sys.argv) > 1 and sys.argv[1] == "media":
+        from media import run_media_ui
+        run_media_ui()
+        return
 
     if not ADDON.getSettingBool("setup_complete"):
         run_wizard()
         return
 
+    if ADDON.getSettingInt("player_mode") == 1:
+        addr = ADDON.getSetting("server_address") or "server"
+        choice = xbmcgui.Dialog().select(
+            f"Screensemble — managed by {addr}",
+            [
+                "Resume idle presentation",
+                "Settings",
+                "Re-run setup wizard",
+            ],
+        )
+        if choice == 0:
+            HOME.setProperty(COMMAND_PROPERTY, COMMAND_RESUME)
+        elif choice == 1:
+            ADDON.openSettings()
+        elif choice == 2:
+            run_wizard()
+        return
+
     choice = xbmcgui.Dialog().select(
         "Screensemble",
         [
+            "Media list & playlist controls",
             "Resume idle presentation",
             "Settings",
             "Re-run setup wizard",
         ],
     )
     if choice == 0:
-        HOME.setProperty(COMMAND_PROPERTY, COMMAND_RESUME)
+        from media import run_media_ui
+        run_media_ui()
     elif choice == 1:
-        ADDON.openSettings()
+        HOME.setProperty(COMMAND_PROPERTY, COMMAND_RESUME)
     elif choice == 2:
+        ADDON.openSettings()
+    elif choice == 3:
         run_wizard()
 
 

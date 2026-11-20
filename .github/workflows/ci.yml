@@ -1,0 +1,85 @@
+name: ci
+
+# Validates every code push and PR. Tag pushes are ignored — releases run
+# their own pipeline, and a release is only ever cut from a commit that
+# already passed this.
+on:
+  push:
+    branches: [main]
+    tags-ignore: ["**"]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax check
+        run: |
+          python3 - <<'PY'
+          import ast, pathlib, sys
+          checked = 0
+          for p in pathlib.Path('.').rglob('*.py'):
+              if {'.git', '.venv', 'dist', 'repo_out'} & set(p.parts):
+                  continue
+              try:
+                  ast.parse(p.read_text(encoding='utf-8'))
+                  checked += 1
+              except SyntaxError as e:
+                  sys.exit(f'{p}: {e}')
+          print(f'{checked} python files OK')
+          PY
+
+      - name: XML validation
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys, xml.dom.minidom
+          checked = 0
+          for p in pathlib.Path('.').rglob('*.xml'):
+              if {'.git', 'dist', 'repo_out'} & set(p.parts):
+                  continue
+              try:
+                  xml.dom.minidom.parse(str(p))
+                  checked += 1
+              except Exception as e:
+                  sys.exit(f'{p}: {e}')
+          print(f'{checked} xml files OK')
+          PY
+
+      - name: addon.xml sanity
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          a = ET.parse('addon.xml').getroot()
+          assert a.attrib.get('id') == 'script.screensemble', a.attrib
+          ver = a.attrib.get('version', '')
+          assert ver and ver != '1.0', f'suspicious version {ver!r}'
+          print(f"addon {a.attrib['id']} v{ver}")
+          PY
+
+      - name: strings.po sanity
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          for p in pathlib.Path('resources/language').rglob('*.po'):
+              assert 'msgctxt' in p.read_text(encoding='utf-8'), p
+          print('strings.po OK')
+          PY
+
+      - name: Build addon zip
+        run: python3 tools/build_zip.py dist/script.screensemble-ci.zip
+
+      - name: Verify zip structure
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('dist/script.screensemble-ci.zip') as z:
+              names = z.namelist()
+              assert z.testzip() is None, 'zip CRC failed'
+              assert names, 'empty zip'
+              assert all(n.startswith('script.screensemble/')
+                         for n in names), names[:5]
+              assert 'script.screensemble/addon.xml' in names
+          print(f'{len(names)} files, Kodi structure OK')
+          PY

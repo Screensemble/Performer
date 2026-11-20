@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<window>
+    <coordinates>
+        <left>0</left>
+        <top>0</top>
+        <right>1920</right>
+        <bottom>1080</bottom>
+    </coordinates>
+    <controls>
+        <!-- Dim background so setup floats over whatever Kodi shows -->
+        <control type="image">
+            <left>0</left>
+            <top>0</top>
+            <width>100%</width>
+            <height>100%</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF000000">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+
+        <!-- Centered wizard card -->
+        <control type="image" id="410">
+            <left>510</left>
+            <top>220</top>
+            <width>900</width>
+            <height>640</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF10203C">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+        <control type="image" id="411">
+            <left>510</left>
+            <top>220</top>
+            <width>900</width>
+            <height>6</height>
+            <aspectratio>scale</aspectratio>
+            <texture colordiffuse="FF3EC1F3">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+        </control>
+
+        <control type="image" id="412">
+            <left>1250</left>
+            <top>252</top>
+            <width>110</width>
+            <height>110</height>
+            <aspectratio>keep</aspectratio>
+            <texture>screensemble-mark.png</texture>
+        </control>
+        <control type="image" id="400">
+            <left>560</left>
+            <top>271</top>
+            <width>330</width>
+            <height>72</height>
+            <aspectratio>keep</aspectratio>
+            <texture>screensemble-wordmark.png</texture>
+        </control>
+        <control type="label" id="401">
+            <left>560</left>
+            <top>320</top>
+            <width>800</width>
+            <height>30</height>
+            <font>font13</font>
+            <textcolor>FF3EC1F3</textcolor>
+            <align>left</align>
+        </control>
+        <control type="label" id="403">
+            <left>560</left>
+            <top>352</top>
+            <width>800</width>
+            <height>56</height>
+            <font>font32</font>
+            <textcolor>FFFFFFFF</textcolor>
+            <align>left</align>
+        </control>
+        <control type="textbox" id="402">
+            <left>560</left>
+            <top>412</top>
+            <width>800</width>
+            <height>90</height>
+            <font>font13</font>
+            <textcolor>FF7A9BB8</textcolor>
+            <align>left</align>
+            <autoscroll delay="4000" time="1500" repeat="8000">true</autoscroll>
+        </control>
+
+        <!-- NOTE: no <visible> tag on these — it is a per-frame condition
+             that would stomp setVisible() from Python every frame. -->
+        <control type="image" id="404">
+            <left>565</left>
+            <top>430</top>
+            <width>215</width>
+            <height>215</height>
+            <aspectratio>keep</aspectratio>
+            <texture>special://profile/addon_data/script.screensemble/qr_setup.png</texture>
+        </control>
+        <control type="textbox" id="405">
+            <left>535</left>
+            <top>650</top>
+            <width>270</width>
+            <height>120</height>
+            <font>font12</font>
+            <textcolor>FF7A9BB8</textcolor>
+            <align>center</align>
+        </control>
+
+        <!-- Remote-navigable option list. Items are rebuilt per step. -->
+        <control type="list" id="9000">
+            <left>560</left>
+            <top>510</top>
+            <width>800</width>
+            <height>330</height>
+            <itemlayout height="66">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>800</width>
+                    <height>56</height>
+                    <aspectratio>scale</aspectratio>
+                    <texture colordiffuse="FF1D3A63">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+                </control>
+                <control type="label">
+                    <left>24</left>
+                    <top>0</top>
+                    <width>760</width>
+                    <height>56</height>
+                    <font>font14</font>
+                    <textcolor>FFFFFFFF</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label</info>
+                </control>
+            </itemlayout>
+            <focusedlayout height="66">
+                <control type="image">
+                    <left>0</left>
+                    <top>0</top>
+                    <width>800</width>
+                    <height>56</height>
+                    <aspectratio>scale</aspectratio>
+                    <texture colordiffuse="FF1E9BE8">special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
+                </control>
+                <control type="label">
+                    <left>24</left>
+                    <top>0</top>
+                    <width>760</width>
+                    <height>56</height>
+                    <font>font14</font>
+                    <textcolor>FF06101F</textcolor>
+                    <aligny>center</aligny>
+                    <info>ListItem.Label</info>
+                </control>
+            </focusedlayout>
+        </control>
+    </controls>
+</window>

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Screensemble — Local Admin</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<style>
+  :root {
+    color-scheme: dark;
+    --navy: #0a1428; --card: #10203c; --edge: #1d3a63;
+    --cyan: #3ec1f3; --blue: #1e9be8; --text: #dde6f2; --dim: #7a9bb8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: var(--text);
+         font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 10px 20px; background: linear-gradient(90deg,#0d1b33,#12294d);
+           border-bottom: 2px solid var(--blue);
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header img.mark { height: 36px; }
+  header img.wordmark { height: 24px; }
+  nav { display: flex; gap: 4px; margin-left: 12px; }
+  nav .tab { background: none; border: 0; border-radius: 6px 6px 0 0;
+             color: var(--dim); font-size: 14px; font-weight: 600;
+             padding: 10px 14px; cursor: pointer; }
+  nav .tab:hover { color: var(--text); }
+  nav .tab.on { color: var(--cyan); border-bottom: 2px solid var(--cyan); }
+  header .dot { width: 10px; height: 10px; border-radius: 50%; background: #4a5e78; }
+  header .dot.on { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+  .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
+  h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  h2:first-child { margin-top: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px;
+          background: var(--card); border: 1px solid var(--edge);
+          border-radius: 8px; overflow: hidden; }
+  td, th { padding: 8px 10px; text-align: left; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--dim); border-bottom: 1px solid var(--edge); font-weight: 600; }
+  td { border-bottom: 1px solid var(--edge); }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; }
+  tr.dragging { opacity: .4; }
+  tr.inactive-row td { opacity: .5; }
+  td.handle { cursor: grab; color: var(--dim); user-select: none; width: 26px;
+              font-size: 15px; }
+  .badge { color: var(--cyan); font-size: 10px; border: 1px solid var(--cyan);
+           border-radius: 4px; padding: 1px 5px; margin-left: 6px;
+           text-transform: uppercase; letter-spacing: .04em; }
+  .badge.gray { color: var(--dim); border-color: var(--dim); }
+  .badge.play { color: #4caf50; border-color: #4caf50; }
+  button { background: linear-gradient(180deg,#2fb2f0,#1e7fd0); color: #fff;
+           border: 0; border-radius: 6px; padding: 8px 14px; font-size: 14px;
+           cursor: pointer; }
+  button.secondary { background: #24405f; }
+  button.danger { background: #8c2f39; }
+  button:active { filter: brightness(.85); }
+  button.mini { padding: 3px 8px; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  label { display: grid; gap: 4px; font-size: 13px; color: var(--dim); margin-bottom: 10px; }
+  input, select { background: #000; border: 1px solid var(--edge); color: var(--text);
+                  border-radius: 6px; padding: 7px 9px; font-size: 14px; }
+  input:focus, select:focus { outline: none; border-color: var(--cyan); }
+  input[type=color] { padding: 2px; height: 34px; width: 100%; }
+  input.dur { padding: 3px 6px; font-size: 12px; width: 64px; }
+  .muted { color: var(--dim); font-size: 13px; }
+  .panel { background: var(--card); border: 1px solid var(--edge);
+           border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  tr.editrow td { background: #0c1930; padding: 14px 16px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+           background: linear-gradient(180deg,#2fb2f0,#1e7fd0); padding: 8px 18px;
+           border-radius: 6px; opacity: 0; transition: opacity .2s;
+           pointer-events: none; z-index: 10; }
+  .thumb { width: 64px; height: 36px; object-fit: cover; border-radius: 4px;
+           background: #000; border: 1px solid var(--edge); display: block; }
+  .thumbicon { font-size: 10px; color: var(--dim); display: flex;
+               align-items: center; justify-content: center; }
+  .empty { padding: 14px; color: var(--dim); font-size: 13px;
+           background: var(--card); border: 1px solid var(--edge);
+           border-radius: 8px; }
+  footer { border-top: 1px solid var(--edge); padding: 12px 20px;
+           color: var(--dim); font-size: 12px; display: flex; gap: 18px;
+           flex-wrap: wrap; }
+  .sysgrid { display: grid; gap: 4px 24px; grid-template-columns: auto 1fr;
+             font-size: 14px; }
+  .sysgrid dt { color: var(--dim); }
+  .sysgrid dd { margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <img class="mark" src="/logo.png" alt="">
+  <img class="wordmark" src="/wordmark.png" alt="Screensemble">
+  <nav>
+    <button class="tab on" id="tab-playlist" onclick="showTab('playlist')">Playlist</button>
+    <button class="tab" id="tab-add" onclick="showTab('add')">Add media</button>
+    <button class="tab" id="tab-settings" onclick="showTab('settings')">Settings</button>
+    <button class="tab" id="tab-system" onclick="showTab('system')">System</button>
+  </nav>
+  <div class="right">
+    <span class="dot" id="statusDot"></span>
+    <span class="muted" id="statusText">connecting…</span>
+  </div>
+</header>
+<main>
+
+  <!-- ============ Playlist (active / inactive items) ============ -->
+  <section id="page-playlist">
+    <div class="row" style="margin-bottom:14px">
+      <label style="margin:0"><input type="checkbox" id="shuffleBox"
+        style="width:auto" onchange="setShuffle(this.checked)"> Shuffle play order</label>
+      <button class="secondary" onclick="cmd('restart')">Restart content</button>
+      <button onclick="showTab('add')">+ Add media</button>
+    </div>
+
+    <h2>Active items <small>play in order — drag to reorder</small></h2>
+    <div id="activeList"><div class="empty">loading…</div></div>
+
+    <h2>Inactive items <small>kept on the display but skipped</small></h2>
+    <div id="inactiveList"><div class="empty">loading…</div></div>
+  </section>
+
+  <!-- ============ Add media ============ -->
+  <section id="page-add" hidden>
+    <h2>Upload a file</h2>
+    <div class="panel">
+      <div class="row">
+        <input type="file" id="fileInput" style="flex:1">
+        <button onclick="upload()">Upload</button>
+      </div>
+      <p class="muted">Files are copied into this display's media folder.</p>
+    </div>
+    <h2>Add a URL</h2>
+    <div class="panel">
+      <div class="row">
+        <input type="text" id="urlName" placeholder="Name" style="width:200px">
+        <input type="text" id="urlAddr" placeholder="https://… (image, video, live stream)" style="flex:1">
+      </div>
+      <button class="secondary" onclick="addUrl()">Add URL</button>
+      <p class="muted">Remote images and live streams join the playlist like
+        local files — no download, the display fetches them when they play.</p>
+    </div>
+  </section>
+
+  <!-- ============ Settings ============ -->
+  <section id="page-settings" hidden>
+    <h2>Settings</h2>
+    <div class="panel">
+      <form id="settingsForm" onsubmit="return saveSettings()">
+        <label>Device name <input name="device_name"></label>
+        <label>Media folder (empty = built-in) <input name="local_media_folder"></label>
+        <div class="row">
+          <label style="flex:1">Idle color <input name="idle_color" type="color"></label>
+          <label style="flex:1">Letterbox color <input name="letterbox_color" type="color"></label>
+        </div>
+        <label>Scaling
+          <select name="idle_scaling">
+            <option value="0">Contain</option>
+            <option value="1">Cover</option>
+            <option value="2">Stretch</option>
+          </select>
+        </label>
+        <button type="submit">Save settings</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ System ============ -->
+  <section id="page-system" hidden>
+    <h2>Status</h2>
+    <div class="panel">
+      <dl class="sysgrid">
+        <dt>State</dt><dd id="sysState">—</dd>
+        <dt>Now showing</dt><dd id="sysCurrent">—</dd>
+        <dt>Mode</dt><dd id="sysMode">—</dd>
+        <dt>Playlist</dt><dd id="sysMedia">—</dd>
+        <dt>Free storage</dt><dd id="sysFree">—</dd>
+      </dl>
+      <p class="muted" id="playingInfo"></p>
+    </div>
+    <h2>Controls</h2>
+    <div class="panel">
+      <div class="row">
+        <button onclick="cmd('restart')">Restart content</button>
+        <button class="secondary" onclick="cmd('restart_app')">Restart player</button>
+        <button class="danger" onclick="cmd('stop')">Stop playback</button>
+      </div>
+      <p class="muted">"Exited" displays resume automatically when content starts.</p>
+    </div>
+  </section>
+</main>
+<footer>
+  <span>Screensemble player</span>
+  <span id="footInfo">local admin</span>
+</footer>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+let settings = {};
+let mediaItems = [];
+let dragName = null;
+let editName = null;
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.style.opacity = 1;
+  setTimeout(() => t.style.opacity = 0, 2200);
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.json();
+}
+function showTab(name) {
+  for (const t of ['playlist','add','settings','system']) {
+    $('page-' + t).hidden = t !== name;
+    $('tab-' + t).className = 'tab' + (t === name ? ' on' : '');
+  }
+}
+
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    $('statusDot').className = 'dot' + (s.idle_window || s.playing ? ' on' : '');
+    const state = s.playing ? 'playing'
+                : s.idle_window ? 'idle'
+                : s.maintenance ? 'exited' : 'starting';
+    $('statusText').textContent = state + ' · ' + s.videos + ' video(s), ' + s.images + ' image(s)';
+    $('playingInfo').textContent = s.maintenance
+      ? 'Sign is exited to Kodi UI — commands will resume it.' : '';
+    $('sysState').textContent = state;
+    $('sysCurrent').textContent = s.current || '—';
+    $('sysMode').textContent = s.mode || '—';
+    $('sysMedia').textContent = s.videos + ' video(s), ' + s.images + ' image(s)';
+    $('sysFree').textContent = s.free_gb != null ? s.free_gb + ' GB' : '—';
+    $('footInfo').textContent =
+      (s.mode || '') + ' mode · ' + (s.free_gb != null ? s.free_gb + ' GB free' : '');
+  } catch (e) { $('statusText').textContent = 'unreachable'; }
+  if (dragName === null && editName === null) {  // don't stomp an open edit/drag
+    try {
+      const m = await api('/api/media');
+      if (m.items) {
+        mediaItems = m.items; renderMedia();
+        $('shuffleBox').checked = !!m.shuffle;
+      } else {
+        $('activeList').innerHTML = '<div class="empty">' + (m.error || 'unavailable') + '</div>';
+      }
+    } catch (e) {}
+  }
+}
+
+function thumbHtml(i) {
+  if (i.kind === 'image') return `<img class="thumb" src="${escH(i.src)}" alt="">`;
+  if (i.kind === 'video') return `<video class="thumb" muted preload="metadata" src="${escH(i.src)}#t=0.1"></video>`;
+  return '<div class="thumb thumbicon">file</div>';
+}
+function schedSummary(s) {
+  if (!s) return '';
+  const bits = [];
+  if (s.start || s.end) bits.push(`${s.start || '…'} → ${s.end || '…'}`);
+  if (s.days && s.days.length) bits.push(s.days.map(d => DAYS[d]).join(','));
+  if (s.from || s.to) bits.push(`${s.from || '0:00'}–${s.to || '24:00'}`);
+  return bits.join(' · ');
+}
+const byName = n => mediaItems.find(i => i.name === n);
+const escH = s => String(s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const escJ = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+function rowHtml(i, draggable) {
+  const n = escJ(i.name);
+  const badges =
+    (i.playing ? '<span class="badge play">playing</span>' : '') +
+    (i.remote ? '<span class="badge gray">url</span>' : '') +
+    (i.schedule ? '<span class="badge gray">' + schedSummary(i.schedule) + '</span>' : '');
+  const durCell = i.kind === 'image'
+    ? `<input class="dur" type="number" min="1" value="${i.duration || ''}" placeholder="10"
+       title="seconds (empty = 10)" onchange="setDuration('${n}', this.value)">`
+    : '—';
+  const sizeCell = i.size ? (i.size / 1048576).toFixed(1) + ' MB' : '—';
+  const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
+  return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
+      class="${i.enabled ? '' : 'inactive-row'}">` +
+    `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
+    `<td>${thumbHtml(i)}</td>` +
+    `<td><b>${escH(i.name)}</b>${badges}` +
+    `<div class="muted" style="font-size:12px">${i.kind}${i.w ? ` · ${i.w}×${i.h}` : ''}</div></td>` +
+    `<td class="num">${sizeCell}</td>` +
+    `<td class="num">${durCell}</td>` +
+    `<td><input type="checkbox" ${i.enabled ? 'checked' : ''}
+      onchange="toggleItem('${n}', this.checked)"></td>` +
+    `<td class="num">` +
+    `<button class="mini secondary" title="play now" onclick="playItem('${n}')">▶</button> ` +
+    `<button class="mini secondary" title="edit" onclick="toggleEdit('${n}')">✎</button> ` +
+    `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑</button> ` +
+    `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓</button> ` +
+    `<button class="mini danger" title="delete" onclick="delItem('${n}')">✕</button></td></tr>` +
+    editRow;
+}
+
+function tableHtml(items, draggable) {
+  return '<table><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+    '<th class="num">Sec</th><th>On</th><th></th></tr>' +
+    items.map(i => rowHtml(i, draggable)).join('') + '</table>';
+}
+
+function renderMedia() {
+  const active = mediaItems.filter(i => i.enabled);
+  const inactive = mediaItems.filter(i => !i.enabled);
+  $('activeList').innerHTML = active.length
+    ? tableHtml(active, true)
+    : '<div class="empty">no active items — upload media or add a URL</div>';
+  $('inactiveList').innerHTML = inactive.length
+    ? tableHtml(inactive, false)
+    : '<div class="empty">nothing disabled</div>';
+  bindDnD();
+}
+
+function editHtml(i) {
+  const s = i.schedule || {};
+  const dayBoxes = DAYS.map((d, di) =>
+    `<label style="margin:0"><input type="checkbox" class="sday" value="${di}" ` +
+    `${(s.days || []).includes(di) ? 'checked' : ''} style="width:auto"> ${d}</label>`
+  ).join(' ');
+  return `<h2 style="margin-top:0">Edit — ${escH(i.name)}</h2>` +
+    `<div class="row">` +
+    (i.kind === 'image'
+      ? `<label>Seconds on screen <input type="number" id="eDur" min="1"
+         value="${i.duration || ''}" placeholder="10" style="width:90px"></label>`
+      : '') +
+    `<label>From date <input type="date" id="sStart" value="${s.start || ''}"></label>` +
+    `<label>To date <input type="date" id="sEnd" value="${s.end || ''}"></label>` +
+    `<label>Time from <input type="time" id="sFrom" value="${s.from || ''}"></label>` +
+    `<label>Time to <input type="time" id="sTo" value="${s.to || ''}"></label>` +
+    `</div>` +
+    `<div class="row">${dayBoxes}</div>` +
+    `<p class="muted">Empty = unconstrained. A "to" earlier than "from" wraps midnight.</p>` +
+    `<div class="row"><button onclick="saveEdit('${escJ(i.name)}')">Save</button>` +
+    `<button class="secondary" onclick="saveEdit('${escJ(i.name)}', true)">Clear schedule</button>` +
+    `<button class="secondary" onclick="toggleEdit()">Close</button></div>`;
+}
+
+function toggleEdit(name) {
+  editName = editName === name || !name ? null : name;
+  renderMedia();
+}
+async function saveEdit(name, clear) {
+  const i = byName(name);
+  const dEl = $('eDur');
+  if (dEl) {
+    await api('/api/media/duration', {method: 'POST',
+      body: JSON.stringify({name, seconds: +dEl.value || null})});
+  }
+  let sched = null;
+  if (!clear) {
+    const days = [...document.querySelectorAll('.sday:checked')].map(c => +c.value);
+    sched = {
+      start: $('sStart').value || null, end: $('sEnd').value || null,
+      from: $('sFrom').value || null, to: $('sTo').value || null,
+      days: days.length === 7 || !days.length ? null : days,
+    };
+    Object.keys(sched).forEach(k => sched[k] == null && delete sched[k]);
+    if (!Object.keys(sched).length) sched = null;
+  }
+  await api('/api/media/schedule', {method: 'POST',
+    body: JSON.stringify({name, schedule: sched})});
+  editName = null;
+  toast('Saved'); refresh();
+}
+
+async function setDuration(name, val) {
+  await api('/api/media/duration', {method: 'POST',
+    body: JSON.stringify({name, seconds: +val || null})});
+  toast('Duration saved');
+}
+async function setShuffle(on) {
+  await api('/api/media/shuffle', {method: 'POST',
+    body: JSON.stringify({shuffle: on})});
+  toast(on ? 'Shuffle on' : 'Shuffle off'); refresh();
+}
+async function addUrl() {
+  const name = $('urlName').value.trim(), url = $('urlAddr').value.trim();
+  if (!name || !url) return toast('Name and URL required');
+  const r = await api('/api/media/url', {method: 'POST',
+    body: JSON.stringify({name, url})});
+  toast(r.error || 'URL added');
+  $('urlName').value = ''; $('urlAddr').value = '';
+  refresh();
+}
+async function playItem(name) {
+  await api('/api/command', {method: 'POST',
+    body: JSON.stringify({cmd: 'play_item', name})});
+  toast('Previewing ' + name);
+}
+
+// Drag & drop within the active table.
+function bindDnD() {
+  document.querySelectorAll('#activeList tr[draggable]').forEach(row => {
+    row.addEventListener('dragstart', () => {
+      dragName = row.dataset.name; row.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging'); dragName = null;
+    });
+    row.addEventListener('dragover', e => e.preventDefault());
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      reorderItem(dragName, row.dataset.name);
+      dragName = null;
+    });
+  });
+}
+async function postOrder() {
+  // Active items in display order, inactive appended — order survives toggles.
+  const order = mediaItems.filter(i => i.enabled).map(i => i.name)
+    .concat(mediaItems.filter(i => !i.enabled).map(i => i.name));
+  await api('/api/media/order', {
+    method: 'POST',
+    body: JSON.stringify({order}),
+  });
+  toast('Play order saved');
+}
+function reorderItem(fromName, toName) {
+  if (!fromName || fromName === toName) return;
+  const act = mediaItems.filter(i => i.enabled);
+  const fi = act.findIndex(i => i.name === fromName);
+  const ti = act.findIndex(i => i.name === toName);
+  if (fi < 0 || ti < 0) return;
+  act.splice(ti, 0, act.splice(fi, 1)[0]);
+  // Write display order back into mediaItems (enabled block first).
+  mediaItems = act.concat(mediaItems.filter(i => !i.enabled));
+  renderMedia(); postOrder();
+}
+function moveItem(name, dir) {
+  const act = mediaItems.filter(i => i.enabled);
+  const i = act.findIndex(x => x.name === name);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= act.length) return;
+  [act[i], act[j]] = [act[j], act[i]];
+  mediaItems = act.concat(mediaItems.filter(x => !x.enabled));
+  renderMedia(); postOrder();
+}
+async function toggleItem(name, enabled) {
+  await api('/api/media/toggle', {
+    method: 'POST',
+    body: JSON.stringify({name, enabled}),
+  });
+  const i = byName(name);
+  if (i) i.enabled = enabled;
+  renderMedia();
+  toast(enabled ? 'Enabled' : 'Disabled — moved to inactive');
+}
+async function delItem(name) {
+  if (!confirm('Delete "' + name + '"?')) return;
+  await fetch('/api/media?name=' + encodeURIComponent(name), {method: 'DELETE'});
+  toast('Deleted');
+  refresh();
+}
+
+async function loadSettings() {
+  settings = await api('/api/settings');
+  const f = $('settingsForm');
+  for (const k in settings) {
+    if (f.elements[k]) f.elements[k].value = settings[k];
+  }
+}
+async function saveSettings() {
+  const f = $('settingsForm');
+  const data = {};
+  for (const k in settings) {
+    if (f.elements[k]) {
+      data[k] = f.elements[k].type === 'number' ? +f.elements[k].value : f.elements[k].value;
+    }
+  }
+  await api('/api/settings', {method: 'POST', body: JSON.stringify(data)});
+  toast('Settings saved — applied live');
+  setTimeout(refresh, 800);
+  return false;
+}
+async function cmd(c) {
+  await api('/api/command', {method: 'POST', body: JSON.stringify({cmd: c})});
+  toast('Command sent: ' + c);
+  setTimeout(refresh, 800);
+}
+async function upload() {
+  const f = $('fileInput').files[0];
+  if (!f) return toast('Pick a file first');
+  const r = await api('/api/upload?name=' + encodeURIComponent(f.name),
+                      {method: 'POST', body: f});
+  toast(r.error || ('Uploaded ' + f.name));
+  refresh();
+}
+refresh(); loadSettings(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>

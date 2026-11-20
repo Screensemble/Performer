@@ -39,7 +39,7 @@
             <texture>special://profile/addon_data/script.screensemble/screensemble_white.png</texture>
         </control>
 
-        <!-- PoC debug overlay (toggleable in addon settings) -->
+        <!-- Status overlay (toggleable in addon settings) -->
         <control type="label" id="300">
             <left>20</left>
             <top>1040</top>
