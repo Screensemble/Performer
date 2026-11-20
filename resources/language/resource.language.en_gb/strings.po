@@ -169,3 +169,16 @@ msgstr ""
 msgctxt "#30081"
 msgid "Media cache limit (MB, 0 = unlimited)"
 msgstr ""
+
+msgctxt "#30082"
+msgid "Security"
+msgstr ""
+
+msgctxt "#30083"
+msgid "Require password to exit"
+msgstr ""
+
+msgctxt "#30084"
+msgid "Exit password"
+msgstr ""
+

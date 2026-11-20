@@ -98,6 +98,8 @@ def load_config():
         "splash_show_server": addon.getSettingBool("splash_show_server"),
         "splash_show_qr": addon.getSettingBool("splash_show_qr"),
         "server_auth_token": addon.getSetting("server_auth_token"),
+        "local_lock": addon.getSettingBool("local_lock"),
+        "local_password": addon.getSetting("local_password"),
     }
 
 
@@ -806,6 +808,22 @@ class IdleController:
             log(f"preview video: {name}")
 
     def exit_to_kodi(self):
+        # Optional kiosk lock — every exit path (double-back, the actions
+        # menu's "Exit to Kodi UI") funnels here, so one password gate
+        # covers them all. Kodi itself can't intercept Android TV's Home
+        # button; OS-level lockdown needs Android app pinning.
+        if self.config.get("local_lock") and self.config.get("local_password"):
+            pw = xbmcgui.Dialog().input(
+                "Screensemble is locked — enter the password to exit",
+                "",
+                xbmcgui.INPUT_ALPHANUM,
+                xbmcgui.ALPHANUM_HIDE_INPUT,
+            )
+            if pw != self.config["local_password"]:
+                if pw:  # empty = cancelled keyboard, stay quiet
+                    notify("Incorrect password")
+                log("exit blocked by screen lock")
+                return
         self.maintenance = True
         self.close_idle()  # run_idle()'s doModal() returns, window drops
         log("exited to Kodi UI — resume via Programs > Screensemble")

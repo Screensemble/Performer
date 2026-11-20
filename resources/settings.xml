@@ -104,6 +104,21 @@
                     <data>RunScript(script.screensemble,pick,local_media_folder,0)</data>
                 </setting>
             </group>
+            <group id="7" label="30082">
+                <setting id="local_lock" type="boolean" label="30083">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="local_password" type="string" label="30084">
+                    <level>0</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string" hidden="true"/>
+                </setting>
+            </group>
         </category>
         <category id="connection" label="30020">
             <group id="1" label="30021">

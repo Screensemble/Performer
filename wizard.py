@@ -140,6 +140,30 @@ class WizardWindow(xbmcgui.WindowXML):
             ]
         steps.append(
             {
+                "title": "Screen lock",
+                "desc": (
+                    "Optionally require a password to leave Screensemble — "
+                    "every exit path (Back, the actions menu) asks for it "
+                    "first, and the web admin is locked too. Intended for "
+                    "displays the public can reach. Leave it off for a "
+                    "gallery-only remote."
+                ),
+                "rows": [
+                    (lambda: (
+                        "Require password to exit   ·   "
+                        + ("on" if ADDON.getSettingBool("local_lock") else "off")
+                    ), "toggle_lock"),
+                    (lambda: (
+                        "Exit password   ·   "
+                        + ("set" if _setting("local_password") else "not set")
+                    ), "input_lock_pw"),
+                    ("Continue", "next"),
+                    ("Back", "back"),
+                ],
+            }
+        )
+        steps.append(
+            {
                 "title": "Ready",
                 "desc": (
                     "Setup is complete. The display will start its idle "
@@ -350,6 +374,33 @@ class WizardWindow(xbmcgui.WindowXML):
             )
             if value:
                 ADDON.setSetting("device_name", value)
+            self._render()
+        elif action == "toggle_lock":
+            if not ADDON.getSettingBool("local_lock"):
+                # Turning the lock on needs a password — collect it inline
+                # rather than silently enabling an unlocked lock.
+                pw = dlg.input(
+                    "Set the exit password",
+                    "",
+                    xbmcgui.INPUT_ALPHANUM,
+                    xbmcgui.ALPHANUM_HIDE_INPUT,
+                )
+                if pw:
+                    ADDON.setSetting("local_password", pw)
+                    ADDON.setSettingBool("local_lock", True)
+            else:
+                ADDON.setSettingBool("local_lock", False)
+            self._render()
+        elif action == "input_lock_pw":
+            pw = dlg.input(
+                "Exit password (empty clears and disables the lock)",
+                _setting("local_password"),
+                xbmcgui.INPUT_ALPHANUM,
+                xbmcgui.ALPHANUM_HIDE_INPUT,
+            )
+            ADDON.setSetting("local_password", pw)
+            if not pw:
+                ADDON.setSettingBool("local_lock", False)
             self._render()
         elif action == "next":
             self.step += 1

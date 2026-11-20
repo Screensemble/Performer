@@ -7,6 +7,7 @@ isolated LAN. Endpoint shapes mirror what the future server will use so
 the two management surfaces stay interchangeable.
 """
 
+import hashlib
 import json
 import os
 import secrets
@@ -48,6 +49,8 @@ MIN_SERVER_VERSION = "0.1.0"
 # Whitelisted editable settings: id -> ("bool"|"int"|"str")
 EDITABLE_SETTINGS = {
     "local_media_folder": "str",
+    "local_lock": "bool",
+    "local_password": "str",
     "idle_color": "str",
     "letterbox_color": "str",
     "idle_scaling": "int",
@@ -352,6 +355,48 @@ def make_handler(controller, addon, on_settings_saved, state):
             q = urllib.parse.parse_qs(u.query)
             return (q.get("k") or [""])[0] == state.token
 
+        # -- optional local lock ------------------------------------------
+        # When the user enables the screen lock, the local admin surface gets
+        # a password gate too. Stateless cookie: sha256(password|boot-token) —
+        # sessions die on Kodi restart, which suits a display appliance.
+
+        def _lock_on(self):
+            return bool(
+                controller.config.get("local_lock")
+                and controller.config.get("local_password")
+            )
+
+        def _lock_secret(self):
+            raw = f"{controller.config.get('local_password')}|{state.token}"
+            return hashlib.sha256(raw.encode()).hexdigest()[:40]
+
+        def _authed(self):
+            for part in (self.headers.get("Cookie") or "").split(";"):
+                k, _, v = part.strip().partition("=")
+                if k == "ss_lock" and v == self._lock_secret():
+                    return True
+            return False
+
+        # Paths that stay reachable while locked — the login page itself, its
+        # assets, and the token-gated setup/pairing flows.
+        _LOCK_OPEN = {
+            "/login", "/api/login", "/api/logout",
+            "/setup", "/setup.html", "/pair",
+            "/favicon.ico", "/favicon.png", "/logo.png", "/wordmark.png",
+            "/api/info",
+        }
+
+        def _lock_open(self, u):
+            return u.path in self._LOCK_OPEN or u.path.startswith("/api/setup/")
+
+        def _lock_required(self, u):
+            if u.path.startswith("/api/"):
+                self._json({"error": "authentication required"}, 401)
+            else:
+                self.send_response(302)
+                self.send_header("Location", "/login")
+                self.end_headers()
+
         # -- routes -------------------------------------------------------
 
         def do_OPTIONS(self):
@@ -367,7 +412,16 @@ def make_handler(controller, addon, on_settings_saved, state):
             u = urllib.parse.urlparse(self.path)
             if self._managed() and self._managed_block():
                 return
-            if u.path in ("/", "/admin.html"):
+            if (
+                not self._managed()
+                and self._lock_on()
+                and not self._lock_open(u)
+                and not self._authed()
+            ):
+                return self._lock_required(u)
+            if u.path == "/login":
+                self._static(os.path.join(WWW_DIR, "login.html"), "text/html")
+            elif u.path in ("/", "/admin.html"):
                 self._static(os.path.join(WWW_DIR, "admin.html"), "text/html")
             elif u.path in ("/setup", "/setup.html"):
                 if not self._key_ok(u):
@@ -646,11 +700,43 @@ def make_handler(controller, addon, on_settings_saved, state):
             u = urllib.parse.urlparse(self.path)
             if self._managed() and self._managed_block():
                 return
+            if (
+                not self._managed()
+                and self._lock_on()
+                and not self._lock_open(u)
+                and not self._authed()
+            ):
+                return self._lock_required(u)
             q = urllib.parse.parse_qs(u.query)
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else b""
 
-            if u.path == "/api/setup":
+            if u.path == "/api/login":
+                try:
+                    data = json.loads(body or b"{}")
+                except ValueError:
+                    data = {}
+                if data.get("password") == controller.config.get("local_password") \
+                        and self._lock_on():
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header(
+                        "Set-Cookie",
+                        f"ss_lock={self._lock_secret()}; Path=/; HttpOnly; SameSite=Lax",
+                    )
+                    self.end_headers()
+                    self.wfile.write(b'{"ok": true}')
+                else:
+                    self._json({"error": "wrong password"}, 401)
+            elif u.path == "/api/logout":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header(
+                    "Set-Cookie", "ss_lock=; Path=/; HttpOnly; Max-Age=0"
+                )
+                self.end_headers()
+                self.wfile.write(b'{"ok": true}')
+            elif u.path == "/api/setup":
                 # Phone setup wizard writes the full SETUP_SETTINGS set,
                 # including player_mode/setup_complete — token required.
                 if not self._key_ok(u):
@@ -815,6 +901,13 @@ def make_handler(controller, addon, on_settings_saved, state):
             u = urllib.parse.urlparse(self.path)
             if self._managed() and self._managed_block():
                 return
+            if (
+                not self._managed()
+                and self._lock_on()
+                and not self._lock_open(u)
+                and not self._authed()
+            ):
+                return self._lock_required(u)
             q = urllib.parse.parse_qs(u.query)
             if u.path != "/api/media":
                 self._json({"error": "not found"}, 404)

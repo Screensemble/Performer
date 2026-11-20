@@ -1,5 +1,15 @@
 # AGENTS.md — Screensemble Player (Kodi Addon)
 
+## Screen lock (optional kiosk mode)
+
+`local_lock` + `local_password` (settings.xml Security group, offered in the
+setup wizard): every exit path funnels through `exit_to_kodi()` in
+service.py, which prompts for the password when the lock is on. The local
+web admin (`web.py`) gets a password-gated login page under the same flag —
+stateless `ss_lock` cookie, sessions die at Kodi restart. Kodi cannot
+intercept Android TV's Home button; OS-level kiosk needs Android app
+pinning (documented in the site docs).
+
 ## What this is
 
 Kodi service addon that turns a device (e.g., Android TV box) into a Screensemble display. Works standalone (local playlists/schedules) or connected to a Screensemble server (Managed or Controlled mode). Responsible for the idle presentation, local asset caching, video playback, and seamless content transitions.
