@@ -10,14 +10,14 @@
   <a href="AI-DECLARATION.md"><img src="https://img.shields.io/badge/AI--DECLARATION-pair-blue" alt="AI-DECLARATION: pair"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/Screensemble/Screensemble-Addon/releases"><img src="https://img.shields.io/github/v/release/Screensemble/Screensemble-Addon" alt="Latest release"></a>
-  <a href="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/release.yml"><img src="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
-  <a href="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/ci.yml"><img src="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Screensemble/Performer/releases"><img src="https://img.shields.io/github/v/release/Screensemble/Performer" alt="Latest release"></a>
+  <a href="https://github.com/Screensemble/Performer/actions/workflows/release.yml"><img src="https://github.com/Screensemble/Performer/actions/workflows/release.yml/badge.svg" alt="Release build"></a>
+  <a href="https://github.com/Screensemble/Performer/actions/workflows/ci.yml"><img src="https://github.com/Screensemble/Performer/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 **Every display always shows an intentional state.** A display should never look unattended just because it's waiting — no Kodi home screen, no Android launcher, no playback controls, no blank. The standby presentation stays resident beneath playback, so transitions reveal it instantly instead of exposing whatever was underneath.
 
-Runs fully standalone with its own playlist, or paired to a [Screensemble Conductor](../Screensemble-Server) for fleet-managed content — and it keeps playing its last known content when the conductor is unreachable.
+Runs fully standalone with its own playlist, or paired to a [Screensemble Conductor](../Conductor) for fleet-managed content — and it keeps playing its last known content when the conductor is unreachable.
 
 ## Features
 

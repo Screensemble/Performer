@@ -6,9 +6,9 @@
     <extension point="xbmc.addon.repository"
                name="Screensemble Repository">
         <dir>
-            <info compressed="false">https://raw.githubusercontent.com/Screensemble/Screensemble-Addon/repo/addons.xml</info>
-            <checksum>https://raw.githubusercontent.com/Screensemble/Screensemble-Addon/repo/addons.xml.md5</checksum>
-            <datadir zip="true">https://raw.githubusercontent.com/Screensemble/Screensemble-Addon/repo/</datadir>
+            <info compressed="false">https://raw.githubusercontent.com/Screensemble/Performer/repo/addons.xml</info>
+            <checksum>https://raw.githubusercontent.com/Screensemble/Performer/repo/addons.xml.md5</checksum>
+            <datadir zip="true">https://raw.githubusercontent.com/Screensemble/Performer/repo/</datadir>
         </dir>
     </extension>
     <extension point="xbmc.addon.metadata">
@@ -16,6 +16,6 @@
         <description lang="en_GB">Install and update the Screensemble display addon. Install this repository once; new releases arrive through Kodi's normal addon-update check.</description>
         <platform>all</platform>
         <license>MIT</license>
-        <source>https://github.com/Screensemble/Screensemble-Addon</source>
+        <source>https://github.com/Screensemble/Performer</source>
     </extension>
 </addon>
