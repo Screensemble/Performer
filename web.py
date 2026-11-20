@@ -2,7 +2,7 @@
 management surface served from inside the addon (Local mode only).
 
 A ThreadingHTTPServer runs on a daemon thread in the service process and
-calls the IdleController directly — no auth, intended for the gallery's
+calls the StandbyController directly — no auth, intended for the gallery's
 isolated LAN. Endpoint shapes mirror what the future server will use so
 the two management surfaces stay interchangeable.
 """
@@ -25,13 +25,13 @@ import xbmcgui
 import xbmcvfs
 
 import medialist
-from idle import ADDON_PATH, resolve_path, restart_app
+from standby import ADDON_PATH, resolve_path, restart_app
 from medialist import IMAGE_EXTS, VIDEO_EXTS
 
 WWW_DIR = os.path.join(ADDON_PATH, "resources", "www")
 HOME = xbmcgui.Window(10000)
 
-# Home-window properties shared with the wizard/idle/script processes.
+# Home-window properties shared with the wizard/standby/script processes.
 PROP_SETUP_URL = "screensemble.setup_url"     # full /setup?k=… URL (QR target)
 PROP_ADMIN_URL = "screensemble.admin_url"     # http://ip:port/
 PROP_WEB_SETUP = "screensemble.websetup"      # "1" while a phone is in /setup
@@ -597,10 +597,10 @@ def make_handler(controller, addon, on_settings_saved, state):
                         "current": current,
                         "free_gb": free_gb,
                         "maintenance": controller.maintenance,
-                        "idle_window": controller.window_open,
+                        "standby_window": controller.window_open,
                         "videos": len(controller.video_files),
                         "images": len(controller.slideshow_files),
-                        "armed": controller.armed,
+                        "prepared": controller.prepared,
                     }
                 )
             elif u.path == "/api/settings":
@@ -988,10 +988,10 @@ def make_handler(controller, addon, on_settings_saved, state):
             elif cmd == "restart":
                 controller.rescan_media()
                 controller.request_content()
-            elif cmd == "arm":
-                controller.arm()
-            elif cmd == "go":
-                controller.go()
+            elif cmd in ("prepare", "arm"):
+                controller.prepare()
+            elif cmd in ("perform", "go"):
+                controller.perform()
             elif cmd == "restart_app":
                 restart_app()
             elif cmd == "reboot":

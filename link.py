@@ -3,7 +3,7 @@
 The display dials OUT over a persistent WebSocket (ws:// or wss://) so a
 server anywhere — LAN or internet — can reach it with no inbound ports
 on the display's network. One socket carries enrollment, periodic status
-reports, and server→display commands (restart, arm/go, play_item,
+reports, and server→display commands (restart, prepare/perform, play_item,
 get_media). Reconnects with backoff; local playback is unaffected while
 the link is down.
 """
@@ -26,7 +26,7 @@ import xbmcaddon
 import xbmcgui
 
 import medialist
-from idle import PROFILE, resolve_path, restart_app
+from standby import PROFILE, resolve_path, restart_app
 
 LINK_PROPERTY = "screensemble.link"
 
@@ -150,7 +150,7 @@ def _send(sock, text):
 
 def _recv(sock):
     """One frame -> (opcode, payload). Raises OSError on close/EOF.
-    socket.timeout only escapes while idle between frames — once a frame
+    socket.timeout only escapes while waiting between frames — once a frame
     has started it is read to the end so the stream never desyncs."""
     started = [False]
 
@@ -242,9 +242,9 @@ class ServerLink:
             "setup_complete": self.c.config.get("setup_complete"),
             "current": self.c.current_name(),
             "playing": self.c.player.playing,
-            "armed": self.c.armed,
+            "prepared": self.c.prepared,
             "maintenance": self.c.maintenance,
-            "idle_window": self.c.window_open,
+            "standby_window": self.c.window_open,
             "items": len(self.c.sequence),
             "free_gb": free_gb,
             "pending_update": self.c._pending_refresh,
@@ -339,17 +339,17 @@ class ServerLink:
         cmd, rid = msg.get("cmd"), msg.get("id")
         err = None
         try:
-            if cmd == "arm":
-                self.c.arm()
-            elif cmd == "go":
-                self.c.go(at_mono=msg.get("at_mono"))
+            if cmd in ("prepare", "arm"):
+                self.c.prepare()
+            elif cmd in ("perform", "go"):
+                self.c.perform(at_mono=msg.get("at_mono"))
             elif cmd == "restart":
                 self.c.rescan_media()
                 self.c.request_content()
             elif cmd == "resume":
                 self.c.resume_from_menu()
             elif cmd == "stop":
-                self.c.armed = False
+                self.c.prepared = False
                 if self.c.player.isPlaying():
                     self.c.player.stop()
             elif cmd == "play_item":

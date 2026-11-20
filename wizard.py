@@ -4,7 +4,7 @@ A step machine: each step sets the step label/description and rebuilds a
 button list (control 9000). Rows either run an action (Kodi's VFS browse
 dialog or on-screen keyboard input) or move between steps. Back on the
 first step cancels; finish writes setup_complete so the service starts
-the idle presentation.
+the standby presentation.
 """
 
 import os
@@ -15,7 +15,7 @@ import xbmcaddon
 import xbmcgui
 
 import qr
-from idle import ADDON_PATH, PROFILE, ensure_runtime_assets
+from standby import ADDON_PATH, PROFILE, ensure_runtime_assets
 
 ADDON = xbmcaddon.Addon()
 HOME = xbmcgui.Window(10000)
@@ -114,7 +114,7 @@ class WizardWindow(xbmcgui.WindowXML):
                     "desc": (
                         "Address of the Screensemble server (host or host:port) "
                         "and a name for this display. The display keeps its "
-                        "local idle presentation until it can reach the server."
+                        "local standby presentation until it can reach the server."
                     ),
                     "rows": [
                         (lambda: f"Server address   ·   {_setting('server_address') or 'not set'}", "input_server"),
@@ -165,8 +165,8 @@ class WizardWindow(xbmcgui.WindowXML):
             {
                 "title": "Ready",
                 "desc": (
-                    "Setup is complete. The display will start its idle "
-                    "presentation immediately — Back twice from the idle "
+                    "Setup is complete. The display will start its standby "
+                    "presentation immediately — Back twice from the standby "
                     "screen anytime to reach Kodi's settings."
                 ),
                 "rows": [
@@ -429,7 +429,7 @@ def run_wizard():
     win.doModal()
     if win.finished:
         xbmcgui.Dialog().notification(
-            "Screensemble", "Setup complete — idle presentation starting"
+            "Screensemble", "Setup complete — standby presentation starting"
         )
     elif not xbmcaddon.Addon().getSettingBool("setup_complete"):
         xbmcgui.Dialog().notification(

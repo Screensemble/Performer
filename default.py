@@ -18,7 +18,7 @@ COMMAND_RELOAD = "reload"
 PICK_HEADINGS = {
     "local_media_folder": "Choose the media folder",
     "server_media_dir": "Choose the cache folder for server media",
-    "idle_image": "Choose the idle image",
+    "idle_image": "Choose the standby image",
 }
 
 
@@ -60,7 +60,7 @@ def main():
         choice = xbmcgui.Dialog().select(
             f"Screensemble — managed by {addr}",
             [
-                "Resume idle presentation",
+                "Resume standby",
                 "Settings",
                 "Re-run setup wizard",
             ],
@@ -77,7 +77,7 @@ def main():
         "Screensemble",
         [
             "Media list & playlist controls",
-            "Resume idle presentation",
+            "Resume standby",
             "Settings",
             "Re-run setup wizard",
         ],

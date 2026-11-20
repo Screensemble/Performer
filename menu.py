@@ -20,7 +20,7 @@ import xbmcplugin
 import xbmcvfs
 
 import medialist
-from idle import resolve_path
+from standby import resolve_path
 from medialist import DEFAULT_MEDIA_DIR, IMAGE_EXTS, VIDEO_EXTS
 
 ADDON = xbmcaddon.Addon()
@@ -152,7 +152,7 @@ def list_root(update=False):
     rows += [
         _control_row("Restart content", action="cmd", cmd="restart"),
         _control_row(
-            "Resume idle presentation", action="cmd", cmd="resume",
+            "Resume standby", action="cmd", cmd="resume",
             back="root",
         ),
         _control_row("Addon settings", action="settings"),

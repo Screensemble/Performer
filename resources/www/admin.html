@@ -151,7 +151,7 @@
         <label>Device name <input name="device_name"></label>
         <label>Media folder (empty = built-in) <input name="local_media_folder"></label>
         <div class="row">
-          <label style="flex:1">Idle color <input name="idle_color" type="color"></label>
+          <label style="flex:1">Standby color <input name="idle_color" type="color"></label>
           <label style="flex:1">Letterbox color <input name="letterbox_color" type="color"></label>
         </div>
         <label>Scaling
@@ -183,7 +183,7 @@
     <div class="panel">
       <div class="row">
         <button onclick="cmd('restart')">Restart content</button>
-        <button class="secondary" onclick="cmd('restart_app')">Restart player</button>
+        <button class="secondary" onclick="cmd('restart_app')">Restart performer</button>
         <button class="danger" onclick="cmd('stop')">Stop playback</button>
       </div>
       <p class="muted">"Exited" displays resume automatically when content starts.</p>
@@ -191,7 +191,7 @@
   </section>
 </main>
 <footer>
-  <span>Screensemble player</span>
+  <span>Screensemble performer</span>
   <span id="footInfo">local admin</span>
 </footer>
 <div id="toast"></div>
@@ -221,9 +221,9 @@ function showTab(name) {
 async function refresh() {
   try {
     const s = await api('/api/status');
-    $('statusDot').className = 'dot' + (s.idle_window || s.playing ? ' on' : '');
+    $('statusDot').className = 'dot' + (s.standby_window || s.playing ? ' on' : '');
     const state = s.playing ? 'playing'
-                : s.idle_window ? 'idle'
+                : s.standby_window ? 'idle'
                 : s.maintenance ? 'exited' : 'starting';
     $('statusText').textContent = state + ' · ' + s.videos + ' video(s), ' + s.images + ' image(s)';
     $('playingInfo').textContent = s.maintenance

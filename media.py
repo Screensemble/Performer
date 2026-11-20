@@ -21,7 +21,7 @@ import xbmcaddon
 import xbmcgui
 
 import medialist
-from idle import ADDON_PATH, ensure_runtime_assets
+from standby import ADDON_PATH, ensure_runtime_assets
 from menu import (
     DAYS,
     DEFAULT_SLIDE_SECONDS,
@@ -119,8 +119,8 @@ class MediaWindow(xbmcgui.WindowXML):
         )
         self._row(lst, "Restart content", "cmd", "restart",
                   "rescan the media folder and restart playback")
-        self._row(lst, "Resume idle presentation", "cmd", "resume",
-                  "return to the idle surface")
+        self._row(lst, "Resume standby", "cmd", "resume",
+                  "return to the standby surface")
         self._row(lst, "Close", "close")
 
     def _render_main(self, lst):
@@ -130,7 +130,7 @@ class MediaWindow(xbmcgui.WindowXML):
         self.getControl(CONTROL_KICKER).setLabel("LOCAL MODE")
         self.getControl(CONTROL_TITLE).setLabel("Media & playlist")
         status = f"{len(entries)} item{'s' if len(entries) != 1 else ''}"
-        status += f" · playing {playing}" if playing else " · idle"
+        status += f" · playing {playing}" if playing else " · standby"
         self.getControl(CONTROL_STATUS).setText(status)
 
         self._row(lst, "Add media file…", "addfile",

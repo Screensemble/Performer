@@ -8,9 +8,9 @@ import xbmcaddon
 import xbmcgui
 import xbmcvfs
 
-from idle import (
+from standby import (
     ADDON_PATH,
-    IdleWindow,
+    StandbyWindow,
     ensure_runtime_assets,
     resolve_path,
 )
@@ -115,12 +115,12 @@ class SettingsMonitor(xbmc.Monitor):
 
 
 class SignagePlayer(xbmc.Player):
-    """Playback monitor. The return-to-idle path is local and immediate —
-    spec 7.5: no server round-trip, no Kodi UI between last frame and idle."""
+    """Playback monitor. The return-to-standby path is local and immediate —
+    spec 7.5: no server round-trip, no Kodi UI between last frame and standby."""
 
-    def __init__(self, on_return_to_idle, on_av_started=None):
+    def __init__(self, on_return_to_standby, on_av_started=None):
         super().__init__()
-        self._on_return_to_idle = on_return_to_idle
+        self._on_return_to_standby = on_return_to_standby
         self._on_av_started = on_av_started
         self.playing = False
 
@@ -142,17 +142,17 @@ class SignagePlayer(xbmc.Player):
         was_playing = self.playing
         self.playing = False
         if was_playing:
-            self._on_return_to_idle()
+            self._on_return_to_standby()
 
 
-class IdleController:
-    """Owns the idle presentation and local-mode content."""
+class StandbyController:
+    """Owns the standby presentation and local-mode content."""
 
     def __init__(self, config, player):
         self.config = config
         self.player = player
         self.window = None
-        self.window_open = False          # idle window resident via doModal()
+        self.window_open = False          # standby window resident via doModal()
         self.content_pending = False      # start content once the window is up
         self.content_due = 0.0
         self.maintenance = False
@@ -171,16 +171,16 @@ class IdleController:
         self._slide_next = 0.0
         self._promo_files = []          # feature cards for empty playlists
         self._promo_index = 0
-        self.armed = False              # conductor: staged, awaiting "go"
-        self._arm_pending = False       # pause the moment a video opens
-        self._go_deadline = None        # mono ms deadline for a synced go
+        self.prepared = False              # conductor: staged, awaiting "go"
+        self._prepare_pending = False       # pause the moment a video opens
+        self._perform_deadline = None        # mono ms deadline for a synced go
         self._pair_dialog = False   # on-TV pair confirm currently showing
         self._pending_refresh = False  # content change waits for a boundary
         self._pulls_inflight = 0    # server pulls still downloading
         self._pull_settle = None    # batch settle deadline before flagging
         self.rescan_media()
 
-    # -- idle presentation -------------------------------------------------
+    # -- standby presentation -------------------------------------------------
 
     def rescan_media(self):
         """Build the effective playlist: media-folder files plus remote URL
@@ -287,8 +287,8 @@ class IdleController:
         )
 
     def request_content(self, delay=4.0):
-        """Queue local content; it starts once the idle window is resident so
-        video always opens over it (never the idle window over video). Once
+        """Queue local content; it starts once the standby window is resident so
+        video always opens over it (never the standby window over video). Once
         the window is up, a short settle is enough — a long wait just shows
         the (often black) underlay between items."""
         self.content_pending = True
@@ -343,9 +343,9 @@ class IdleController:
 
     def start_content(self):
         """Local-mode content entry point: start the unified playlist
-        sequence, or just refresh the idle presentation if it's empty."""
+        sequence, or just refresh the standby presentation if it's empty."""
         self.content_pending = False
-        self.armed = False
+        self.prepared = False
         if self.sequence:
             self._seq_pos = -1
             self._advance_seq()
@@ -364,7 +364,7 @@ class IdleController:
     def _play_seq(self):
         """Start the sequence item at _seq_pos: videos play fullscreen
         once (end-of-playback advances the sequence); images render on
-        the resident idle window for their duration."""
+        the resident standby window for their duration."""
         if not (0 <= self._seq_pos < len(self.sequence)):
             return
         item = self.sequence[self._seq_pos]
@@ -394,13 +394,13 @@ class IdleController:
                 and self.window._last_img in self._name_of
             )
             if self.window_open and not holding:
-                self.window.clear_idle_image()
+                self.window.clear_standby_image()
             self.player.play(pl)
             log(f"seq {self._seq_pos + 1}/{len(self.sequence)} video: {item['name']}")
         else:
             self._seq_playing = False
             if self.window_open:
-                self.window.set_idle_image(item["path"])
+                self.window.set_standby_image(item["path"])
             self._slide_next = self._seq_started + self._seq_duration(item)
             log(f"seq {self._seq_pos + 1}/{len(self.sequence)} image: {item['name']}")
 
@@ -411,21 +411,21 @@ class IdleController:
         self._seq_pos = (self._seq_pos + delta) % len(self.sequence)
         self._play_seq()
 
-    def return_to_idle(self):
-        """Called when playback finishes. The idle window is still resident
+    def return_to_standby(self):
+        """Called when playback finishes. The standby window is still resident
         beneath the video window — Kodi reveals it instantly, so there is
         nothing to re-show here."""
 
     # -- conductor (managed mode) ------------------------------------------
 
-    def arm(self):
+    def prepare(self):
         """Stage the sequence at item 0 and hold: a video opens paused on
         its first frame (the monitor pauses it on AV start), an image is
-        shown statically. tick() does not advance while armed — 'go'
+        shown statically. tick() does not advance while prepared — 'go'
         releases every staged display at once."""
         self.rescan_media()
-        self.armed = bool(self.sequence)
-        if not self.armed:
+        self.prepared = bool(self.sequence)
+        if not self.prepared:
             self.refresh_view()     # empty playlist -> promo cards
             return
         self._previewing = False
@@ -433,38 +433,38 @@ class IdleController:
         self._seq_started = time.perf_counter()
         item = self.sequence[0]
         if item["kind"] == "video":
-            self._arm_pending = True
+            self._prepare_pending = True
             self._seq_playing = True
             if self.window_open:
-                self.window.clear_idle_image()
+                self.window.clear_standby_image()
             self.player.play(item["path"])
             xbmc.executebuiltin("PlayerControl(RepeatOff)")
         else:
             self._seq_playing = False
             if self.window_open:
-                self.window.set_idle_image(item["path"])
-        log(f"conductor arm — staged {item['name']}")
+                self.window.set_standby_image(item["path"])
+        log(f"conductor prepare — staged {item['name']}")
 
-    def go(self, at_mono=None):
-        """Release the armed sequence: resume a staged video or start the
+    def perform(self, at_mono=None):
+        """Release the prepared sequence: resume a staged video or start the
         staged image's timer. With nothing staged it just restarts
         content. `at_mono` (display monotonic ms) defers the release to a
         shared deadline so synced displays all start on the same instant."""
         if at_mono is not None:
             delay_ms = at_mono - time.monotonic() * 1000
             if delay_ms > 0:
-                self._go_deadline = time.monotonic() + delay_ms / 1000
-                log(f"conductor go scheduled in {delay_ms:.0f}ms")
+                self._perform_deadline = time.monotonic() + delay_ms / 1000
+                log(f"conductor perform scheduled in {delay_ms:.0f}ms")
                 return
             # Deadline already passed — release immediately below.
         self._release()
 
     def _release(self):
-        self._go_deadline = None
-        if not self.armed:
+        self._perform_deadline = None
+        if not self.prepared:
             self.request_content()
             return
-        self.armed = False
+        self.prepared = False
         if self._seq_playing:
             if self.player.playing and xbmc.getCondVisibility(
                 "Player.Paused"
@@ -478,15 +478,15 @@ class IdleController:
                 time.perf_counter()
                 + self._seq_duration(self.sequence[self._seq_pos])
             )
-        log("conductor go — sequence released")
+        log("conductor perform — sequence released")
 
     def on_av_started(self):
-        """Fired by the player monitor on AV start: an armed video pauses
+        """Fired by the player monitor on AV start: an prepared video pauses
         on its first frame so 'go' is the only thing that moves it."""
-        if self._arm_pending:
-            self._arm_pending = False
+        if self._prepare_pending:
+            self._prepare_pending = False
             self.player.pause()
-            log("armed video paused on first frame")
+            log("prepared video paused on first frame")
         if self._seq_playing and not self._previewing and self.sequence:
             pl = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
             plpos = pl.getposition()
@@ -504,7 +504,7 @@ class IdleController:
                         (self._seq_pos + 1) % len(self.sequence)
                     ]
                     if after["kind"] == "image" and self.window_open:
-                        self.window.set_idle_image(after["path"])
+                        self.window.set_standby_image(after["path"])
             # PlayerControl only takes effect on a live player — calling
             # it before play() is a no-op, so repeat mode is set here.
             # A chain covering the whole sequence (all-video) loops
@@ -514,10 +514,10 @@ class IdleController:
             else:
                 xbmc.executebuiltin("PlayerControl(RepeatOff)")
 
-    def run_idle(self, abort_check):
-        """Blocking: open the idle window modally and keep it resident. The
+    def run_standby(self, abort_check):
+        """Blocking: open the standby window modally and keep it resident. The
         fullscreen video window opens over it, so on playback stop Kodi
-        reveals the idle screen with zero gap — no skin re-parse.
+        reveals the standby screen with zero gap — no skin re-parse.
 
         Refuses to open while video is on top: activating a modal window
         would cover the playing video. Waits until playback is done instead."""
@@ -528,7 +528,7 @@ class IdleController:
         while self.player.playing and waited < 5.0 and not abort_check():
             xbmc.sleep(100)
             waited += 0.1
-        win = IdleWindow("idle.xml", ADDON_PATH, "Default", "1080i")
+        win = StandbyWindow("standby.xml", ADDON_PATH, "Default", "1080i")
         win.on_action = self._on_window_action
         win.config = self._view_config()
         self.window = win
@@ -579,8 +579,8 @@ class IdleController:
                 return item["name"]
         return ""
 
-    def idle_visible(self):
-        """Is our idle window currently the active window?"""
+    def standby_visible(self):
+        """Is our standby window currently the active window?"""
         if self.window is None:
             return False
         try:
@@ -588,7 +588,7 @@ class IdleController:
         except Exception:
             return True
 
-    def close_idle(self):
+    def close_standby(self):
         if self.window is not None:
             self.window.close()
 
@@ -602,12 +602,12 @@ class IdleController:
         # Synced 'go' — release exactly at the shared deadline. The tick
         # cadence (~50-100ms) bounds the overshoot; displays land within a
         # frame or two of each other on a normal LAN.
-        if self._go_deadline and time.monotonic() >= self._go_deadline:
-            if self.armed:
-                log("conductor go — deadline reached")
+        if self._perform_deadline and time.monotonic() >= self._perform_deadline:
+            if self.prepared:
+                log("conductor perform — deadline reached")
                 self._release()
             else:
-                self._go_deadline = None  # cancelled by stop/disarm
+                self._perform_deadline = None  # cancelled by stop/disarm
         # Server pushes download in the background — the content update
         # only queues once the batch has settled (nothing in flight, and
         # a short grace so back-to-back files count as one batch).
@@ -672,12 +672,12 @@ class IdleController:
                 self._promo_index = (
                     (self._promo_index + 1) % len(self._promo_files)
                 )
-                self.window.set_idle_image(
+                self.window.set_standby_image(
                     self._promo_files[self._promo_index]
                 )
                 self._slide_next = time.perf_counter() + PROMO_SECONDS
             return
-        if self.armed:
+        if self.prepared:
             return                      # conductor hold until "go"
         if not self.window_open or self.maintenance:
             return
@@ -781,7 +781,7 @@ class IdleController:
             self.slide_skip(-1)
         elif aid in (xbmcgui.ACTION_SELECT_ITEM,) or aid in PLAY_ACTIONS:
             self._open_actions_menu()
-        # every other action is swallowed — IdleWindow.onAction never calls
+        # every other action is swallowed — StandbyWindow.onAction never calls
         # the base implementation, so navigation cannot close the window.
 
     def _open_actions_menu(self):
@@ -805,7 +805,7 @@ class IdleController:
 
     def play_item(self, name):
         """Preview a single playlist entry (web admin Play button): videos
-        play fullscreen once; images show on the idle screen for a minute."""
+        play fullscreen once; images show on the standby screen for a minute."""
         state = getattr(self, "_media_state", None) or medialist.load_state()
         url = next((u["url"] for u in state["urls"] if u["name"] == name), None)
         folder = resolve_path(
@@ -815,12 +815,12 @@ class IdleController:
         if not path:
             return
         ext = os.path.splitext(path.split("?")[0])[1].lower()
-        self.armed = False
+        self.prepared = False
         self._previewing = True       # tick() resumes the sequence after
         self._seq_playing = False
         if ext in IMAGE_EXTS:
             if self.window_open:
-                self.window.set_idle_image(path)
+                self.window.set_standby_image(path)
                 self._slide_next = time.perf_counter() + 60.0
                 log(f"preview image: {name}")
         else:
@@ -847,9 +847,9 @@ class IdleController:
                 log("exit blocked by screen lock")
                 return
         self.maintenance = True
-        self.close_idle()  # run_idle()'s doModal() returns, window drops
+        self.close_standby()  # run_standby()'s doModal() returns, window drops
         log("exited to Kodi UI — resume via Programs > Screensemble")
-        notify("Idle exited. Resume from Programs > Screensemble")
+        notify("Standby exited. Resume from Programs > Screensemble")
 
     def resume_from_menu(self, with_content=True):
         self.maintenance = False
@@ -859,7 +859,7 @@ class IdleController:
             self.request_content()
 
     def refresh_view(self):
-        """Re-apply current view config to the resident idle window (after a
+        """Re-apply current view config to the resident standby window (after a
         settings change). Does not interrupt playback."""
         if self.window_open and not self.player.playing:
             self.window.config = self._view_config()
@@ -929,7 +929,7 @@ def pair_prompt(controller, monitor):
 def poll_loop(monitor, controller):
     """Background thread: commands, live settings, setup completion, pending
     content, and the slideshow timer. The main thread is blocked inside the
-    idle window's doModal() loop."""
+    standby window's doModal() loop."""
     player = controller.player
     was_fullscreen = False
     while not monitor.abortRequested():
@@ -997,7 +997,7 @@ def poll_loop(monitor, controller):
                 log("managed mode — server link started")
 
         if not controller.config["setup_complete"]:
-            # Poll for wizard completion; then bring the idle presentation up.
+            # Poll for wizard completion; then bring the standby presentation up.
             # Fresh Addon() — the cached instance misses script-instance writes.
             if xbmcaddon.Addon().getSettingBool("setup_complete"):
                 config = load_config()
@@ -1009,8 +1009,8 @@ def poll_loop(monitor, controller):
         elif controller.content_pending and (
             controller.window_open or time.perf_counter() >= controller.content_due
         ):
-            # Content starts only once the idle window is resident (or the
-            # deadline forces it) so video always opens over the idle screen.
+            # Content starts only once the standby window is resident (or the
+            # deadline forces it) so video always opens over the standby screen.
             controller.start_content()
 
         controller.tick()
@@ -1034,10 +1034,10 @@ def main():
     xbmc.executebuiltin("InhibitScreensaver(true)")
 
     monitor = SettingsMonitor()
-    controller = IdleController(
+    controller = StandbyController(
         config,
         SignagePlayer(
-            lambda: controller.return_to_idle(),
+            lambda: controller.return_to_standby(),
             lambda: controller.on_av_started(),
         ),
     )
@@ -1087,7 +1087,7 @@ def main():
         except Exception as e:
             log(f"splash failed: {e}")
 
-    # Main thread: keep the idle window modally resident. doModal() blocks
+    # Main thread: keep the standby window modally resident. doModal() blocks
     # until the window is closed (exit_to_kodi or shutdown), then we either
     # wait hidden (maintenance) or reopen.
     while not monitor.abortRequested():
@@ -1097,11 +1097,11 @@ def main():
             and not controller.window_open
         ):
             try:
-                controller.run_idle(monitor.abortRequested)
+                controller.run_standby(monitor.abortRequested)
             except Exception as e:
                 controller.window_open = False
                 controller.window = None
-                log(f"idle window failed: {e} — retrying")
+                log(f"standby window failed: {e} — retrying")
                 monitor.waitForAbort(1.0)
         elif monitor.waitForAbort(0.5):
             break
@@ -1111,7 +1111,7 @@ def main():
         web.stop()
     if link is not None:
         link.stop()
-    controller.close_idle()
+    controller.close_standby()
     xbmc.executebuiltin("InhibitScreensaver(false)")
 
 

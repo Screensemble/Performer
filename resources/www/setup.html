@@ -92,11 +92,11 @@ fetch(api("/api/setup/state")).then(r => r.json()).then(d => {
 const steps = [
   {
     title: "How should this display run?",
-    desc: "Local plays media from a folder on this display — no network needed. Server connects to a Screensemble server for managed, synchronized content.",
+    desc: "Local plays media from a folder on this display — no network needed. Conductor connects to a Screensemble conductor for managed, synchronized content.",
     render() {
       $("body").innerHTML =
         `<button class="opt" onclick="pick(0)">Local (standalone)</button>` +
-        `<button class="opt" onclick="pick(1)">Server (managed / controlled)</button>`;
+        `<button class="opt" onclick="pick(1)">Conductor (managed / controlled)</button>`;
     },
   },
   {
@@ -112,9 +112,9 @@ const steps = [
           `durations are set on the playlist (10s default).</div>`;
       } else {
         h +=
-          `<label>Server address</label>` +
-          `<input type="text" id="server_address" value="${esc(s.server_address)}" placeholder="server:8080">` +
-          `<label>Pairing code (from the server's Pair page)</label>` +
+          `<label>Conductor address</label>` +
+          `<input type="text" id="server_address" value="${esc(s.server_address)}" placeholder="conductor:8080">` +
+          `<label>Pairing code (from the conductor's Pair page)</label>` +
           `<input type="text" id="pair_code" autocomplete="off" placeholder="ABCD-2345">` +
           `<label>Device name</label>` +
           `<input type="text" id="device_name" value="${esc(s.device_name)}" placeholder="Gallery Wall 1">` +
@@ -123,8 +123,8 @@ const steps = [
           `<button class="browse" onclick="browseFor('server_media_dir')">Browse folders…</button>` +
           `<div id="picker"></div>` +
           `<div class="hint">Downloaded content lives here and survives outages.</div>` +
-          `<button class="browse" onclick="pairNow()">Send pairing request to this server</button>` +
-          `<div class="hint">The display asks you to confirm on its remote — pairing also registers it on the server's dashboard.</div>`;
+          `<button class="browse" onclick="pairNow()">Send pairing request to this conductor</button>` +
+          `<div class="hint">The display asks you to confirm on its remote — pairing also registers it on the conductor's dashboard.</div>`;
       }
       h +=
         `<div class="row">` +
@@ -165,8 +165,8 @@ let browseTarget = null, browsePath = "", browseStack = [], browseEntries = [];
 function pairNow() {
   const s = v("server_address").trim();
   const c = v("pair_code").trim();
-  if (!s) { $("err").textContent = "Enter the server address first."; return; }
-  if (!c) { $("err").textContent = "Enter the pairing code shown on the server's Pair page."; return; }
+  if (!s) { $("err").textContent = "Enter the conductor address first."; return; }
+  if (!c) { $("err").textContent = "Enter the pairing code shown on the conductor's Pair page."; return; }
   // Same endpoint pair.html uses — the token K came in with this page's
   // URL, so no camera hop is needed.
   window.open(`/pair?s=${encodeURIComponent(s)}&a=${encodeURIComponent(c)}&t=${encodeURIComponent(K)}`, "_blank");
@@ -228,7 +228,7 @@ function collect() {
 async function finish() {
   collect();
   if (state.player_mode === 1 && !state.server_address) {
-    $("err").textContent = "Enter the server address."; return;
+    $("err").textContent = "Enter the conductor address."; return;
   }
   state.setup_complete = true;
   try {

@@ -15,18 +15,18 @@
   <a href="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/ci.yml"><img src="https://github.com/Screensemble/Screensemble-Addon/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**Every display always shows an intentional state.** A display should never look unattended just because it's waiting — no Kodi home screen, no Android launcher, no playback controls, no blank. The idle presentation stays resident beneath playback, so transitions reveal it instantly instead of exposing whatever was underneath.
+**Every display always shows an intentional state.** A display should never look unattended just because it's waiting — no Kodi home screen, no Android launcher, no playback controls, no blank. The standby presentation stays resident beneath playback, so transitions reveal it instantly instead of exposing whatever was underneath.
 
-Runs fully standalone with its own playlist, or paired to a [Screensemble Server](../Screensemble-Server) for fleet-managed content — and it keeps playing its last known content when the server is unreachable.
+Runs fully standalone with its own playlist, or paired to a [Screensemble Conductor](../Screensemble-Server) for fleet-managed content — and it keeps playing its last known content when the conductor is unreachable.
 
 ## Features
 
 - **Unified content sequence** - one playlist across images and videos: ordering, per-item enable/disable, schedules (dates, weekdays, time-of-day incl. overnight), shuffle, and remote URL items.
 - **Seamless transitions** - consecutive videos chain inside a single Kodi playlist (~100ms internal hops, seamless all-video loops); the next image is preloaded beneath the last video of a run so video→image is an instant reveal; images hold through the video load gap. Same behavior across the loop wraparound.
-- **Managed mode** - pair via QR plus a one-time code from the server's Pair page and an on-TV confirm, then everything is remote: media pushes (SHA-256 verified, `.part`-staged then activated), shared playlist sync, settings, commands.
+- **Managed mode** - pair via QR plus a one-time code from the conductor's Pair page and an on-TV confirm, then everything is remote: media pushes (SHA-256 verified, `.part`-staged then activated), shared playlist sync, settings, commands.
 - **Deferred updates** - content changes queue and apply at the next natural item boundary — a video finishes, an image timer expires. Pushed batches settle before flagging. Nothing cuts mid-piece.
-- **Local mode** - completely standalone: own media folder, on-TV playlist manager, web admin on the LAN. No server needed, ever.
-- **Managed cache** - server media lives in a cache folder with a configurable cap; unreferenced files evict least-recently-used first, playlist items are never evicted.
+- **Local mode** - completely standalone: own media folder, on-TV playlist manager, web admin on the LAN. No conductor needed, ever.
+- **Managed cache** - conductor media lives in a cache folder with a configurable cap; unreferenced files evict least-recently-used first, playlist items are never evicted.
 - **Branded standby** - empty managed displays hold a dim brand mark on black; empty local displays rotate feature cards.
 - **Remote-first input** - everything works from a basic D-pad remote. No keyboard, no mouse.
 - **Stall watchdog** - a hung video (player alive, clock frozen) is skipped automatically. Screensaver stays inhibited while the service runs.
@@ -47,17 +47,17 @@ Requirements: Kodi 19 (Matrix) or later. On first run the addon stays hidden —
 
 1. **Setup wizard** - pick Local or Server mode; media folder defaults to the built-in profile folder (a custom folder is an advanced setting).
 2. **Local mode** - drop media in the folder (or use the web admin to upload); the display runs its own sequence with your order, durations, and schedules.
-3. **Managed mode** - pair to a server: scan the display's QR from the server's Pair page (or enter its one-time code on the phone setup page), then confirm on the TV; the display pulls its content over the same outbound socket it reports to. Offline? It keeps playing what's cached.
-4. **Playback** - the idle window stays modally resident beneath video, so every transition is a reveal, never a reload.
+3. **Managed mode** - pair to a conductor: scan the display's QR from the conductor's Pair page (or enter its one-time code on the phone setup page), then confirm on the TV; the display pulls its content over the same outbound socket it reports to. Offline? It keeps playing what's cached.
+4. **Playback** - the standby window stays modally resident beneath video, so every transition is a reveal, never a reload.
 
 ## Remote map
 
-| Button | On the idle screen | During video |
+| Button | On the standby screen | During video |
 |---|---|---|
 | OK / Select / Menu / Play | Actions menu | Kodi player OSD |
 | D-pad right / down | Next item | Kodi player OSD |
 | D-pad left / up | Previous item | Kodi player OSD |
-| Back | Once: toast; twice within 3 s: exit to Kodi UI | Stop → return to idle |
+| Back | Once: toast; twice within 3 s: exit to Kodi UI | Stop → return to standby |
 
 Resume after exiting: **Programs → Screensemble → Resume**.
 
@@ -76,8 +76,8 @@ Media management is disabled when the media folder is a remote VFS path
 ## Settings
 
 Kodi → Add-ons → My add-ons → Services → **Screensemble Player** →
-Configure. Setup (mode, media folder, web admin), Connection (server
-address, device name), Idle Presentation (colors, scaling), Advanced
+Configure. Setup (mode, media folder, web admin), Connection (conductor
+address, device name), Standby (colors, scaling), Advanced
 (custom folders, media cache limit, re-run wizard).
 
 Path pickers are text fields plus a **Browse…** button that opens Kodi's

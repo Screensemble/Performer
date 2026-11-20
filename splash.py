@@ -15,7 +15,7 @@ import xbmc
 import xbmcgui
 
 import qr
-from idle import PROFILE
+from standby import PROFILE
 from web import lan_ip
 
 CONTROL_ADMIN = 600     # "Local admin: http://…"

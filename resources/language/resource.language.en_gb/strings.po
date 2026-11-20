@@ -17,7 +17,7 @@ msgid "Connection"
 msgstr ""
 
 msgctxt "#30030"
-msgid "Idle Presentation"
+msgid "Standby"
 msgstr ""
 
 # --- Setup ---
@@ -34,7 +34,7 @@ msgid "Local (standalone)"
 msgstr ""
 
 msgctxt "#30013"
-msgid "Server (managed/controlled)"
+msgid "Conductor (managed/controlled)"
 msgstr ""
 
 msgctxt "#30014"
@@ -46,27 +46,27 @@ msgid "Custom media folder (empty = built-in media folder)"
 msgstr ""
 
 msgctxt "#30018"
-msgid "Server mode"
+msgid "Conductor mode"
 msgstr ""
 
 msgctxt "#30019"
-msgid "Cache folder for server media"
+msgid "Cache folder for conductor media"
 msgstr ""
 
 # --- Connection ---
 msgctxt "#30021"
-msgid "Server"
+msgid "Conductor"
 msgstr ""
 
 msgctxt "#30022"
-msgid "Server address"
+msgid "Conductor address"
 msgstr ""
 
 msgctxt "#30023"
 msgid "Device name"
 msgstr ""
 
-# --- Idle Presentation ---
+# --- Standby ---
 msgctxt "#30035"
 msgid "Presentation"
 msgstr ""
@@ -84,11 +84,11 @@ msgid "Static image"
 msgstr ""
 
 msgctxt "#30039"
-msgid "Idle color (hex RGB)"
+msgid "Standby color (hex RGB)"
 msgstr ""
 
 msgctxt "#30040"
-msgid "Idle image"
+msgid "Standby image"
 msgstr ""
 
 msgctxt "#30041"
@@ -121,7 +121,7 @@ msgid "Browse cache folder…"
 msgstr ""
 
 msgctxt "#30063"
-msgid "Browse idle image…"
+msgid "Browse standby image…"
 msgstr ""
 
 # --- Local web admin ---
@@ -147,11 +147,11 @@ msgid "Boot screen duration (seconds, 0 = off)"
 msgstr ""
 
 msgctxt "#30075"
-msgid "Show server address on boot screen"
+msgid "Show conductor address on boot screen"
 msgstr ""
 
 msgctxt "#30024"
-msgid "Server auth token (optional)"
+msgid "Conductor auth token (optional)"
 msgstr ""
 
 msgctxt "#30078"

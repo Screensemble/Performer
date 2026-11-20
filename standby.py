@@ -1,6 +1,6 @@
-"""Idle presentation rendering.
+"""Standby presentation rendering.
 
-The idle presentation is a dedicated fullscreen xbmcgui.WindowXML window
+The standby presentation is a dedicated fullscreen xbmcgui.WindowXML window
 (spec 7.8.1) held open modally for the lifetime of the service: fullscreen
 video opens over it, so stopping playback reveals it instantly with no
 Kodi UI in between. Fully controllable: letterbox color, scaling mode,
@@ -23,7 +23,7 @@ PROFILE = xbmcvfs.translatePath(ADDON.getAddonInfo("profile"))
 WHITE_PNG = os.path.join(PROFILE, "screensemble_white.png")
 ROUND_PNG = os.path.join(PROFILE, "screensemble_card.png")
 
-# Control ids inside idle.xml
+# Control ids inside standby.xml
 CONTROL_BG = 200          # fullscreen white texture, tinted via colordiffuse
 CONTROL_IMG_CONTAIN = 201
 CONTROL_IMG_STRETCH = 202
@@ -156,8 +156,8 @@ def restart_app():
     xbmc.executebuiltin("Quit")
 
 
-class IdleWindow(xbmcgui.WindowXML):
-    """Dedicated fullscreen idle window (spec 7.8.1).
+class StandbyWindow(xbmcgui.WindowXML):
+    """Dedicated fullscreen standby window (spec 7.8.1).
 
     Constructed with the standard WindowXML signature — Kodi's C-level
     constructor validates its args, so custom constructor parameters are not
@@ -181,7 +181,7 @@ class IdleWindow(xbmcgui.WindowXML):
             self.getControl(self._img_cid).setVisible(True)
         return self.getControl(self._img_cid)
 
-    def set_idle_image(self, path):
+    def set_standby_image(self, path):
         """Swap the visible image control's texture (slideshow rotation).
         useCache=False is required — otherwise Kodi re-serves the previously
         displayed texture and the image never changes."""
@@ -189,10 +189,10 @@ class IdleWindow(xbmcgui.WindowXML):
             return   # already showing — a re-set would flicker the texture
         self._last_img = path
         img = self._image_control()
-        img.setColorDiffuse("FFFFFFFF")   # undo clear_idle_image tint
+        img.setColorDiffuse("FFFFFFFF")   # undo clear_standby_image tint
         img.setImage(path, False)
 
-    def clear_idle_image(self):
+    def clear_standby_image(self):
         """Blank the image layer to black — the load gap between video
         items then shows an intentional cut instead of stale artwork or
         the standby card."""
@@ -211,7 +211,7 @@ class IdleWindow(xbmcgui.WindowXML):
         try:
             self._apply()
         except Exception as e:
-            xbmc.log(f"[screensemble] idle apply failed: {e}", xbmc.LOGERROR)
+            xbmc.log(f"[screensemble] standby apply failed: {e}", xbmc.LOGERROR)
 
     def onAction(self, action):
         # Deliberately do NOT call the base implementation: every action we

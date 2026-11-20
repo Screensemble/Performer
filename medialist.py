@@ -31,7 +31,7 @@ import time
 
 import xbmc
 
-from idle import PROFILE
+from standby import PROFILE
 
 STATE_PATH = os.path.join(PROFILE, "media_state.json")
 MANIFEST_PATH = os.path.join(PROFILE, "media_manifest.json")
