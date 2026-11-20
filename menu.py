@@ -423,10 +423,14 @@ def _add_url():
 
 def main():
     # First launch can arrive through this plugin entry instead of the
-    # script path — the wizard owns the flow until setup_complete flips.
+    # script path — but a modal WindowXML can't run inside a plugin
+    # directory request (Kodi spins forever waiting for the listing).
+    # Hand off to the script entry and satisfy the directory contract.
     if not ADDON.getSettingBool("setup_complete"):
-        from wizard import run_wizard
-        run_wizard()
+        if HANDLE != -1:
+            xbmcplugin.endOfDirectory(HANDLE, succeeded=False)
+        xbmc.executebuiltin("RunScript(script.screensemble)")
+        return
 
     query = sys.argv[2][1:] if len(sys.argv) > 2 else ""
     params = dict(urllib.parse.parse_qsl(query))
