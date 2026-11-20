@@ -17,6 +17,7 @@ import ssl
 import struct
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -67,6 +68,15 @@ def hardware_id():
 # our messages are small JSON.
 
 
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    """pull_file must stay on the paired server — never follow a redirect."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(newurl, code, "redirect refused", headers, fp)
+
+
+_NO_REDIRECT = urllib.request.build_opener(_RefuseRedirect)
+
 _WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 MAX_FRAME = 32 * 1024 * 1024  # server messages are small JSON commands
 
@@ -92,12 +102,14 @@ def _ws_connect(url, timeout=8.0):
         ).encode()
     )
     resp = b""
-    while b"\r\n\r\n" not in resp:
-        chunk = sock.recv(4096)
+    # Byte-at-a-time so a frame sent right after the 101 stays in the
+    # socket for _recv instead of being swallowed with the headers.
+    while not resp.endswith(b"\r\n\r\n"):
+        chunk = sock.recv(1)
         if not chunk:
             raise OSError("handshake closed")
         resp += chunk
-    head, _, extra = resp.partition(b"\r\n\r\n")
+    head = resp[:-4]
     lines = head.split(b"\r\n")
     status = lines[0]
     if b" 101" not in status:
@@ -111,8 +123,6 @@ def _ws_connect(url, timeout=8.0):
     ).decode()
     if headers.get("sec-websocket-accept") != want:
         raise OSError("handshake refused: bad Sec-WebSocket-Accept")
-    if extra:
-        raise OSError("handshake refused: unexpected data")
     return sock
 
 
@@ -481,7 +491,7 @@ class ServerLink:
             if not folder or "://" in folder:
                 raise ValueError("media folder is not local")
             os.makedirs(folder, exist_ok=True)
-            with urllib.request.urlopen(url, timeout=30) as r:
+            with _NO_REDIRECT.open(url, timeout=30) as r:
                 total = int(r.headers.get("Content-Length") or 0)
                 dest = os.path.join(folder, name + ".part")
                 got = last = 0
