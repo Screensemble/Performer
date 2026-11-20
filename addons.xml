@@ -1,0 +1,44 @@
+<addons>
+<addon id="script.screensemble"
+       name="Screensemble Player"
+       version="0.3.0"
+       provider-name="Screensemble">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+    </requires>
+    <extension point="xbmc.service" library="service.py"/>
+    <extension point="xbmc.python.script" library="default.py"/>
+    <extension point="xbmc.python.pluginsource" library="menu.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <assets>
+            <icon>icon.png</icon>
+            <fanart>fanart.jpg</fanart>
+        </assets>
+        <summary lang="en_GB">Signage That Takes the Stage</summary>
+        <description lang="en_GB">An ensemble of screens — a self-contained digital signage performer for the Screensemble synchronized multi-display system. Runs standalone, or connects to a Screensemble conductor for managed and controlled playback.</description>
+        <platform>all</platform>
+    </extension>
+</addon>
+<addon id="repository.screensemble"
+       name="Screensemble Repository"
+       version="1.0.0"
+       provider-name="Screensemble">
+    <extension point="xbmc.addon.repository"
+               name="Screensemble Repository">
+        <dir>
+            <info compressed="false">https://raw.githubusercontent.com/Screensemble/Performer/repo/addons.xml</info>
+            <checksum>https://raw.githubusercontent.com/Screensemble/Performer/repo/addons.xml.md5</checksum>
+            <datadir zip="true">https://raw.githubusercontent.com/Screensemble/Performer/repo/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Screensemble digital-signage addon repository</summary>
+        <description lang="en_GB">Install and update the Screensemble display addon. Install this repository once; new releases arrive through Kodi's normal addon-update check.</description>
+        <platform>all</platform>
+        <license>MIT</license>
+        <source>https://github.com/Screensemble/Performer</source>
+    </extension>
+</addon>
+</addons>
