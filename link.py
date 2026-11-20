@@ -321,6 +321,15 @@ class ServerLink:
         if t == "get_file":
             self._send_file(msg)
             return
+        if t == "clock_probe":
+            # NTP-lite: the server converts our monotonic clock into a
+            # shared release deadline — reply immediately, timing is data.
+            self._reply({
+                "type": "clock_pong",
+                "nonce": msg.get("nonce"),
+                "mono": time.monotonic() * 1000,
+            })
+            return
         if t != "command":
             return
         cmd, rid = msg.get("cmd"), msg.get("id")
@@ -329,7 +338,7 @@ class ServerLink:
             if cmd == "arm":
                 self.c.arm()
             elif cmd == "go":
-                self.c.go()
+                self.c.go(at_mono=msg.get("at_mono"))
             elif cmd == "restart":
                 self.c.rescan_media()
                 self.c.request_content()

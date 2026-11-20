@@ -172,6 +172,7 @@ class IdleController:
         self._promo_index = 0
         self.armed = False              # conductor: staged, awaiting "go"
         self._arm_pending = False       # pause the moment a video opens
+        self._go_deadline = None        # mono ms deadline for a synced go
         self._pair_dialog = False   # on-TV pair confirm currently showing
         self._pending_refresh = False  # content change waits for a boundary
         self._pulls_inflight = 0    # server pulls still downloading
@@ -443,10 +444,22 @@ class IdleController:
                 self.window.set_idle_image(item["path"])
         log(f"conductor arm — staged {item['name']}")
 
-    def go(self):
+    def go(self, at_mono=None):
         """Release the armed sequence: resume a staged video or start the
         staged image's timer. With nothing staged it just restarts
-        content."""
+        content. `at_mono` (display monotonic ms) defers the release to a
+        shared deadline so synced displays all start on the same instant."""
+        if at_mono is not None:
+            delay_ms = at_mono - time.monotonic() * 1000
+            if delay_ms > 0:
+                self._go_deadline = time.monotonic() + delay_ms / 1000
+                log(f"conductor go scheduled in {delay_ms:.0f}ms")
+                return
+            # Deadline already passed — release immediately below.
+        self._release()
+
+    def _release(self):
+        self._go_deadline = None
         if not self.armed:
             self.request_content()
             return
@@ -585,6 +598,15 @@ class IdleController:
         # The media manager window reads this to mark the playing row —
         # covers images (no player file) as well as videos.
         HOME.setProperty("screensemble.now", self.current_name())
+        # Synced 'go' — release exactly at the shared deadline. The tick
+        # cadence (~50-100ms) bounds the overshoot; displays land within a
+        # frame or two of each other on a normal LAN.
+        if self._go_deadline and time.monotonic() >= self._go_deadline:
+            if self.armed:
+                log("conductor go — deadline reached")
+                self._release()
+            else:
+                self._go_deadline = None  # cancelled by stop/disarm
         # Server pushes download in the background — the content update
         # only queues once the batch has settled (nothing in flight, and
         # a short grace so back-to-back files count as one batch).
