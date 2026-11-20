@@ -459,7 +459,12 @@ def make_handler(controller, addon, on_settings_saved, state):
                 # server works too. Disabled once setup is complete so a
                 # configured display can't be re-paired off the LAN.
                 q = urllib.parse.parse_qs(u.query)
-                if controller.config["setup_complete"]:
+                # A server-mode display set up by hand has no token yet and
+                # still needs to pair; anything else that's set up is locked.
+                if controller.config["setup_complete"] and (
+                    controller.config.get("player_mode") != 1
+                    or controller.config.get("server_auth_token")
+                ):
                     self._pair_page(
                         "Pairing disabled",
                         "Setup is already complete on this display. To pair it "
@@ -732,8 +737,8 @@ def make_handler(controller, addon, on_settings_saved, state):
                 except ValueError:
                     data = {}
                 if self._lock_on() and hmac.compare_digest(
-                    str(data.get("password") or ""),
-                    str(controller.config.get("local_password") or ""),
+                    str(data.get("password") or "").encode(),
+                    str(controller.config.get("local_password") or "").encode(),
                 ):
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
