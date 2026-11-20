@@ -16,7 +16,7 @@
             <icon>icon.png</icon>
             <fanart>fanart.jpg</fanart>
         </assets>
-        <summary lang="en_GB">Screensemble signage player</summary>
+        <summary lang="en_GB">Signage That Takes the Stage</summary>
         <description lang="en_GB">An ensemble of screens — a self-contained digital signage player for the Screensemble synchronized multi-display system. Runs standalone, or connects to a Screensemble server for managed and controlled playback.</description>
         <platform>all</platform>
     </extension>

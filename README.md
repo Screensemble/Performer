@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Screensemble Player</h1>
 <p align="center">
-  A Kodi addon that turns any device into an always-intentional signage display.
+  Signage That Takes the Stage.
   <br><em>An ensemble of screens.</em>
 </p>
 <p align="center">
