@@ -32,7 +32,6 @@ PROMO_DIR = os.path.join(ADDON_PATH, "resources", "media")
 # waiting for the server — self-advertising makes no sense there.
 STANDBY_IMG = os.path.join(PROMO_DIR, "standby.png")
 PROP_PAIR_URL = "screensemble.pairurl"     # set by web /pair — offer pending
-PROP_PAIR_AUTH = "screensemble.pairauth"
 PROP_PAIR_INFO = "screensemble.pairinfo"   # server /api/info JSON
 PROP_PAIR_ID = "screensemble.pairid"       # server's pairing_id
 
@@ -849,7 +848,6 @@ def pair_prompt(controller, monitor):
     endpoint parked a server offer — the human confirms or cancels on the
     TV remote itself. OK applies server mode; Cancel drops the offer."""
     url = HOME.getProperty(PROP_PAIR_URL)
-    auth = HOME.getProperty(PROP_PAIR_AUTH)
     try:
         info = json.loads(HOME.getProperty(PROP_PAIR_INFO) or "{}")
     except ValueError:
@@ -876,25 +874,28 @@ def pair_prompt(controller, monitor):
         ok = False
     pairing_id = HOME.getProperty(PROP_PAIR_ID)
     HOME.clearProperty(PROP_PAIR_URL)
-    HOME.clearProperty(PROP_PAIR_AUTH)
     HOME.clearProperty(PROP_PAIR_INFO)
     HOME.clearProperty(PROP_PAIR_ID)
+    resp, err = None, None
     if ok:
-        # Tell the server the human confirmed — it registers us as a player.
-        if pairing_id:
-            resp, err = post_json(url, "/api/pair/accept", {"pairing_id": pairing_id})
-            if err or not (resp or {}).get("ok"):
-                log(f"pair accept notify failed: {err or resp}")
+        # Tell the server the human confirmed — it registers us and issues
+        # this display's device token. No token, no managed mode.
+        resp, err = post_json(url, "/api/pair/accept", {"pairing_id": pairing_id})
+        if err or not (resp or {}).get("ok") or not (resp or {}).get("token"):
+            log(f"pair accept failed: {err or resp}")
+            notify("Pairing failed — start again from the server's Pair page")
+            ok = None
+    if ok:
         addon = xbmcaddon.Addon()
         addon.setSetting("server_address", url)
-        addon.setSetting("server_auth_token", auth)
-        addon.setSetting("paired_id", pairing_id or "")
+        addon.setSetting("server_auth_token", str(resp["token"]))
+        addon.setSetting("paired_id", str(resp.get("player_id") or ""))
         addon.setSettingInt("player_mode", 1)
         addon.setSettingBool("setup_complete", True)
         monitor.dirty = True
         log(f"paired to server {url}")
         notify(f"Paired — managed by {url}")
-    else:
+    elif ok is False:
         if pairing_id:
             post_json(url, "/api/pair/decline", {"pairing_id": pairing_id})
         log("pairing declined on TV")

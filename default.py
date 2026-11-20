@@ -5,7 +5,6 @@ offers resume / settings / re-run wizard.
 
 import sys
 
-import xbmc
 import xbmcaddon
 import xbmcgui
 

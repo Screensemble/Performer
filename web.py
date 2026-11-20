@@ -8,6 +8,7 @@ the two management surfaces stay interchangeable.
 """
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -35,7 +36,6 @@ PROP_SETUP_URL = "screensemble.setup_url"     # full /setup?k=… URL (QR target
 PROP_ADMIN_URL = "screensemble.admin_url"     # http://ip:port/
 PROP_WEB_SETUP = "screensemble.websetup"      # "1" while a phone is in /setup
 PROP_PAIR_URL = "screensemble.pairurl"        # pending server URL offered to the TV
-PROP_PAIR_AUTH = "screensemble.pairauth"      # auth token bundled with the offer
 PROP_PAIR_INFO = "screensemble.pairinfo"      # server /api/info JSON (name, owner…)
 PROP_PAIR_ID = "screensemble.pairid"          # server's pairing_id for accept/decline
 
@@ -44,7 +44,7 @@ WEB_SETUP_STALE = 5.0      # seconds without a ping before the wizard resumes
 # Pairing requires the server to identify itself via GET /api/info:
 # product must be "screensemble-server" and version >= this. The server can
 # likewise gate us via its min_client_version field — checked both ways.
-MIN_SERVER_VERSION = "0.1.0"
+MIN_SERVER_VERSION = "0.2.0"
 
 # Whitelisted editable settings: id -> ("bool"|"int"|"str")
 EDITABLE_SETTINGS = {
@@ -64,7 +64,6 @@ EDITABLE_SETTINGS = {
 SETUP_SETTINGS = dict(EDITABLE_SETTINGS, **{
     "player_mode": "int",
     "server_address": "str",
-    "server_auth_token": "str",
     "server_media_dir": "str",
     "setup_complete": "bool",
 })
@@ -219,8 +218,6 @@ def make_handler(controller, addon, on_settings_saved, state):
                 "/api/status", "/api/media", "/api/info"
             ):
                 return False
-            if self.command == "POST" and u.path == "/api/command":
-                return False
             if u.path == "/":
                 self._pair_page(
                     "Managed display",
@@ -353,7 +350,7 @@ def make_handler(controller, addon, on_settings_saved, state):
 
         def _key_ok(self, u):
             q = urllib.parse.parse_qs(u.query)
-            return (q.get("k") or [""])[0] == state.token
+            return hmac.compare_digest((q.get("k") or [""])[0], state.token)
 
         # -- optional local lock ------------------------------------------
         # When the user enables the screen lock, the local admin surface gets
@@ -373,7 +370,7 @@ def make_handler(controller, addon, on_settings_saved, state):
         def _authed(self):
             for part in (self.headers.get("Cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == "ss_lock" and v == self._lock_secret():
+                if k == "ss_lock" and hmac.compare_digest(v, self._lock_secret()):
                     return True
             return False
 
@@ -399,14 +396,18 @@ def make_handler(controller, addon, on_settings_saved, state):
 
         # -- routes -------------------------------------------------------
 
-        def do_OPTIONS(self):
-            # CORS preflight — needed so a server web page (different origin)
-            # can POST pairing requests to this client.
-            self.send_response(204)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-            self.end_headers()
+        def _cross_site(self):
+            """CSRF guard for state-changing requests: browsers attach
+            Origin (and Sec-Fetch-Site) to cross-site POST/DELETE, so a page
+            elsewhere on the LAN can't drive this admin. Non-browser clients
+            send neither and pass."""
+            if (self.headers.get("Sec-Fetch-Site") or "") == "cross-site":
+                return True
+            origin = self.headers.get("Origin")
+            if not origin:
+                return False
+            host = urllib.parse.urlparse(origin).netloc
+            return host.lower() != (self.headers.get("Host") or "").lower()
 
         def do_GET(self):
             u = urllib.parse.urlparse(self.path)
@@ -465,12 +466,20 @@ def make_handler(controller, addon, on_settings_saved, state):
                         "to a different server, reset it in addon settings first.",
                     )
                     return
-                if (q.get("t") or [""])[0] != state.token:
+                if not hmac.compare_digest((q.get("t") or [""])[0], state.token):
                     self._pair_page("Pairing failed", "Open the on-screen QR code link.")
                     return
                 server_url = (q.get("s") or [""])[0].strip()
+                code = (q.get("a") or [""])[0].strip()
                 if not server_url:
                     self._pair_page("Pairing failed", "Missing server URL.")
+                    return
+                if not code:
+                    self._pair_page(
+                        "Pairing failed",
+                        "Missing pairing code — get one from the server's "
+                        "Pair page.",
+                    )
                     return
                 if HOME.getProperty(PROP_PAIR_URL) or controller._pair_dialog:
                     self._pair_page(
@@ -509,9 +518,12 @@ def make_handler(controller, addon, on_settings_saved, state):
                         f"addon is v{our_version} — update the addon.",
                     )
                     return
-                # Client reports itself to the server — the server gates on
-                # its own minimum before the TV is ever asked. Both sides
-                # must accept for the offer to reach the display.
+                # Client reports itself to the server with the one-time code
+                # the server issued — the server checks it and its own
+                # minimum version before the TV is ever asked. The device
+                # token is only issued after the on-TV confirm.
+                from link import hardware_id
+
                 resp, err = post_json(
                     server_url,
                     "/api/pair/request",
@@ -520,7 +532,8 @@ def make_handler(controller, addon, on_settings_saved, state):
                         "version": our_version,
                         "name": addon.getSetting("device_name"),
                         "client_url": state.admin_url().rstrip("/"),
-                        "token": state.token,
+                        "hardware_id": hardware_id(),
+                        "code": code,
                     },
                 )
                 if err or not resp or not resp.get("accepted"):
@@ -534,7 +547,6 @@ def make_handler(controller, addon, on_settings_saved, state):
                 # Both sides accepted — the TV confirms with the human now.
                 HOME.setProperty(PROP_PAIR_ID, str(resp.get("pairing_id") or ""))
                 HOME.setProperty(PROP_PAIR_INFO, json.dumps(info))
-                HOME.setProperty(PROP_PAIR_AUTH, (q.get("a") or [""])[0])
                 HOME.setProperty(PROP_PAIR_URL, server_url)
                 log(f"pair offer from {server_url} accepted — awaiting on-TV confirm")
                 self._pair_page(
@@ -698,6 +710,9 @@ def make_handler(controller, addon, on_settings_saved, state):
 
         def do_POST(self):
             u = urllib.parse.urlparse(self.path)
+            if self._cross_site():
+                self._json({"error": "cross-site request refused"}, 403)
+                return
             if self._managed() and self._managed_block():
                 return
             if (
@@ -716,8 +731,10 @@ def make_handler(controller, addon, on_settings_saved, state):
                     data = json.loads(body or b"{}")
                 except ValueError:
                     data = {}
-                if data.get("password") == controller.config.get("local_password") \
-                        and self._lock_on():
+                if self._lock_on() and hmac.compare_digest(
+                    str(data.get("password") or ""),
+                    str(controller.config.get("local_password") or ""),
+                ):
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header(
@@ -777,11 +794,11 @@ def make_handler(controller, addon, on_settings_saved, state):
                 except ValueError:
                     self._json({"error": "bad json"}, 400)
                     return
-                state = medialist.load_state()
-                state["order"] = [str(n) for n in order]
-                medialist.save_state(state)
+                ms = medialist.load_state()
+                ms["order"] = [str(n) for n in order]
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
-                log(f"media order saved ({len(state['order'])} entries)")
+                log(f"media order saved ({len(ms['order'])} entries)")
                 self._json({"ok": True})
             elif u.path == "/api/media/toggle":
                 try:
@@ -793,14 +810,14 @@ def make_handler(controller, addon, on_settings_saved, state):
                 if not name:
                     self._json({"error": "no filename"}, 400)
                     return
-                state = medialist.load_state()
-                disabled = set(state["disabled"])
+                ms = medialist.load_state()
+                disabled = set(ms["disabled"])
                 if data.get("enabled"):
                     disabled.discard(name)
                 else:
                     disabled.add(name)
-                state["disabled"] = sorted(disabled)
-                medialist.save_state(state)
+                ms["disabled"] = sorted(disabled)
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
                 log(f"media {'enabled' if data.get('enabled') else 'disabled'}: {name}")
                 self._json({"ok": True, "enabled": bool(data.get("enabled"))})
@@ -815,14 +832,14 @@ def make_handler(controller, addon, on_settings_saved, state):
                 if not name or not url.startswith(("http://", "https://", "rtsp://", "rtmp://")):
                     self._json({"error": "name and http(s)/rtsp URL required"}, 400)
                     return
-                state = medialist.load_state()
-                for u in state["urls"]:
+                ms = medialist.load_state()
+                for u in ms["urls"]:
                     if u["name"] == name:
                         u["url"] = url
                         break
                 else:
-                    state["urls"].append({"name": name, "url": url})
-                medialist.save_state(state)
+                    ms["urls"].append({"name": name, "url": url})
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
                 log(f"media url saved: {name} -> {url}")
                 self._json({"ok": True})
@@ -834,16 +851,16 @@ def make_handler(controller, addon, on_settings_saved, state):
                     return
                 name = str(data.get("name", ""))
                 secs = data.get("seconds")
-                state = medialist.load_state()
+                ms = medialist.load_state()
                 try:
                     secs = float(secs)
                     if secs > 0:
-                        state["durations"][name] = secs
+                        ms["durations"][name] = secs
                     else:
-                        state["durations"].pop(name, None)
+                        ms["durations"].pop(name, None)
                 except (TypeError, ValueError):
-                    state["durations"].pop(name, None)
-                medialist.save_state(state)
+                    ms["durations"].pop(name, None)
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
                 self._json({"ok": True})
             elif u.path == "/api/media/schedule":
@@ -854,12 +871,12 @@ def make_handler(controller, addon, on_settings_saved, state):
                     return
                 name = str(data.get("name", ""))
                 sched = data.get("schedule")
-                state = medialist.load_state()
+                ms = medialist.load_state()
                 if isinstance(sched, dict) and any(sched.values()):
-                    state["schedules"][name] = sched
+                    ms["schedules"][name] = sched
                 else:
-                    state["schedules"].pop(name, None)
-                medialist.save_state(state)
+                    ms["schedules"].pop(name, None)
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
                 self._json({"ok": True})
             elif u.path == "/api/media/shuffle":
@@ -868,11 +885,11 @@ def make_handler(controller, addon, on_settings_saved, state):
                 except ValueError:
                     self._json({"error": "bad json"}, 400)
                     return
-                state = medialist.load_state()
-                state["shuffle"] = bool(data.get("shuffle"))
-                medialist.save_state(state)
+                ms = medialist.load_state()
+                ms["shuffle"] = bool(data.get("shuffle"))
+                medialist.save_state(ms)
                 controller.defer_content_refresh()
-                self._json({"ok": True, "shuffle": state["shuffle"]})
+                self._json({"ok": True, "shuffle": ms["shuffle"]})
             elif u.path == "/api/upload":
                 name = os.path.basename((q.get("name") or [""])[0])
                 folder = self._media_dir()
@@ -899,6 +916,9 @@ def make_handler(controller, addon, on_settings_saved, state):
 
         def do_DELETE(self):
             u = urllib.parse.urlparse(self.path)
+            if self._cross_site():
+                self._json({"error": "cross-site request refused"}, 403)
+                return
             if self._managed() and self._managed_block():
                 return
             if (
@@ -1038,7 +1058,6 @@ class AdminServer:
         HOME.clearProperty(PROP_ADMIN_URL)
         HOME.clearProperty(PROP_WEB_SETUP)
         HOME.clearProperty(PROP_PAIR_URL)
-        HOME.clearProperty(PROP_PAIR_AUTH)
         HOME.clearProperty(PROP_PAIR_INFO)
         HOME.clearProperty(PROP_PAIR_ID)
         self._server.shutdown()
