@@ -4,6 +4,7 @@
 <h1 align="center">Screensemble Player</h1>
 <p align="center">
   A Kodi addon that turns any device into an always-intentional signage display.
+  <br><em>An ensemble of screens.</em>
 </p>
 <p align="center">
   <a href="AI-DECLARATION.md"><img src="https://img.shields.io/badge/AI--DECLARATION-pair-blue" alt="AI-DECLARATION: pair"></a>
