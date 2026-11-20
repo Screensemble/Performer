@@ -62,3 +62,13 @@ jobs:
           git commit -m "repo: ${GITHUB_REF_NAME} (script.screensemble ${VERSION})" \
             || echo "repo index unchanged"
           git push origin repo
+
+      # Tell the Site repo to redeploy so /setup/ serves the new zips now
+      # (the daily cron is the fallback if the secret isn't configured).
+      - name: Refresh screensemble.com/setup
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_PAT }}
+        run: |
+          gh api repos/Screensemble/Site/dispatches \
+            -f event_type=performer-release
+        continue-on-error: true
