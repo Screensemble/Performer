@@ -105,7 +105,10 @@
   </div>
 </header>
 <main>
-
+  <div id="degradedBanner" hidden style="background:#8c5a2f;color:#fff;
+    border-radius:8px;padding:10px 14px;margin-bottom:14px;font-weight:600">
+    Conductor unreachable — offline admin. Edit the server address in
+    Settings to reconnect; content edits stay server-side.</div>
   <!-- ============ Remote (transport + maintenance) ============ -->
   <section id="page-remote">
     <div class="panel">
@@ -250,6 +253,7 @@ async function refresh() {
     const state = s.playing ? 'playing'
                 : s.standby_window ? 'idle'
                 : s.maintenance ? 'exited' : 'starting';
+    $('degradedBanner').hidden = !s.degraded;
     $('statusText').textContent = state + ' · ' + s.videos + ' video(s), ' + s.images + ' image(s)';
     $('playingInfo').textContent = s.maintenance
       ? 'Sign is exited to Kodi UI — commands will resume it.' : '';

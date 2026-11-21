@@ -24,6 +24,12 @@ import xbmc
 import xbmcgui
 import xbmcvfs
 
+from standby import PROFILE
+
+# Seconds the managed link must be down before the degraded local admin
+# opens — a temporary outage never exposes it.
+DEGRADED_AFTER = 120
+
 import medialist
 from standby import ADDON_PATH, resolve_path, restart_app
 from medialist import IMAGE_EXTS, VIDEO_EXTS
@@ -157,7 +163,23 @@ def post_json(base, path, payload, timeout=4.0):
         return None, str(e)
 
 
+PASSWORD_RULE = "at least 8 characters, one letter, one digit"
+
+
+def _password_ok(pw):
+    p = str(pw)
+    return (
+        len(p) >= 8
+        and any(c.isalpha() for c in p)
+        and any(c.isdigit() for c in p)
+    )
+
+
 def _addon_write(addon, sid, kind, value):
+    # The local lock holds the same bar as the conductor login — an empty
+    # value is always fine (lock disabled), a set one must pass the rule.
+    if sid == "local_password" and str(value) and not _password_ok(value):
+        raise ValueError(f"password needs {PASSWORD_RULE}")
     if kind == "bool":
         addon.setSettingBool(sid, bool(value))
     elif kind == "int":
@@ -205,11 +227,23 @@ def make_handler(controller, addon, on_settings_saved, state):
             self.wfile.write(body)
 
         def _managed(self):
-            """Paired to a server — the human-facing admin surface is off.
-            Only the API endpoints the server reaches stay alive."""
+            """Paired to a server — the human-facing admin surface is off
+            until the link has been down long enough to matter."""
             return (
                 controller.config.get("player_mode") == 1
                 and controller.config.get("setup_complete")
+            )
+
+        def _degraded(self):
+            """Managed but the conductor has been unreachable for a while —
+            the reduced local admin (status, settings, transport, reconnect)
+            opens so the display stays serviceable without the server."""
+            if not self._managed():
+                return False
+            since = getattr(controller, "_offline_since", None)
+            return (
+                since is not None
+                and time.monotonic() - since >= DEGRADED_AFTER
             )
 
         # Human-facing surface that stays open when the display is managed:
@@ -226,17 +260,32 @@ def make_handler(controller, addon, on_settings_saved, state):
         }
 
         def _managed_block(self):
-            """Gate a request in managed mode. Returns True when the
-            request was handled (blocked) and the caller must stop."""
+            """Gate a request in managed mode. While the link is up only the
+            machine endpoints are open and / shows a notice; once degraded
+            the reduced human surface opens. Returns True when handled."""
             u = urllib.parse.urlparse(self.path)
-            if self.command == "GET" and u.path in self._MANAGED_GET:
+            if self._degraded():
+                if self.command == "GET" and u.path in self._MANAGED_GET:
+                    return False
+                if self.command == "POST" and u.path in self._MANAGED_POST:
+                    return False
+                self._json(
+                    {"error": "content is managed by the conductor"},
+                    403,
+                )
+                return True
+            if self.command == "GET" and u.path in (
+                "/api/status", "/api/media", "/api/info"
+            ):
                 return False
-            if self.command == "POST" and u.path in self._MANAGED_POST:
-                return False
-            self._json(
-                {"error": "content on this display is managed by the conductor"},
-                403,
-            )
+            if u.path == "/":
+                self._pair_page(
+                    "Managed display",
+                    "This display is managed by a Screensemble conductor — "
+                    "its admin opens locally if the link stays down.",
+                )
+            else:
+                self._json({"error": "display is managed by a server"}, 403)
             return True
 
         def _pair_page(self, title, msg, close=False):
@@ -369,19 +418,53 @@ def make_handler(controller, addon, on_settings_saved, state):
         # sessions die on Kodi restart, which suits a display appliance.
 
         def _lock_on(self):
-            return bool(
-                controller.config.get("local_lock")
-                and controller.config.get("local_password")
-            )
+            if controller.config.get("local_lock") and controller.config.get(
+                "local_password"
+            ):
+                return True
+            # Degraded mode: the conductor's own verifier gates the admin.
+            return self._degraded() and bool(self._server_hash())
 
         def _lock_secret(self):
             raw = f"{controller.config.get('local_password')}|{state.token}"
             return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
+        def _server_hash(self):
+            """The conductor's admin verifier pushed over the socket —
+            scrypt 'salt_hex:hash_hex', never a raw password."""
+            try:
+                with open(os.path.join(PROFILE, "server_auth.hash")) as f:
+                    return f.read().strip()
+            except OSError:
+                return ""
+
+        def _server_secret(self):
+            raw = f"{self._server_hash()}|{state.token}"
+            return hashlib.sha256(raw.encode()).hexdigest()[:40]
+
+        def _server_password_ok(self, pw):
+            h = self._server_hash()
+            if ":" not in h:
+                return False
+            salt_hex, want_hex = h.split(":", 1)
+            try:
+                got = hashlib.scrypt(
+                    pw.encode(), salt=bytes.fromhex(salt_hex),
+                    n=16384, r=16, p=1, dklen=64,
+                ).hex()
+            except (ValueError, OSError):
+                return False
+            return hmac.compare_digest(got, want_hex)
+
         def _authed(self):
+            secrets_ok = {self._lock_secret()}
+            if self._degraded() and self._server_hash():
+                secrets_ok.add(self._server_secret())
             for part in (self.headers.get("Cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == "ss_lock" and hmac.compare_digest(v, self._lock_secret()):
+                if k == "ss_lock" and any(
+                    hmac.compare_digest(v, s) for s in secrets_ok
+                ):
                     return True
             return False
 
@@ -606,6 +689,7 @@ def make_handler(controller, addon, on_settings_saved, state):
                         "current": current,
                         "free_gb": free_gb,
                         "maintenance": controller.maintenance,
+                        "degraded": self._degraded(),
                         "paused": xbmc.getCondVisibility("Player.Paused"),
                         "standby_window": controller.window_open,
                         "videos": len(controller.video_files),
@@ -746,15 +830,23 @@ def make_handler(controller, addon, on_settings_saved, state):
                     data = json.loads(body or b"{}")
                 except ValueError:
                     data = {}
-                if self._lock_on() and hmac.compare_digest(
-                    str(data.get("password") or "").encode(),
+                pw = str(data.get("password") or "")
+                local_ok = hmac.compare_digest(
+                    pw.encode(),
                     str(controller.config.get("local_password") or "").encode(),
-                ):
+                )
+                server_ok = self._degraded() and self._server_password_ok(pw)
+                if self._lock_on() and (local_ok or server_ok):
+                    secret = (
+                        self._lock_secret()
+                        if local_ok
+                        else self._server_secret()
+                    )
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header(
                         "Set-Cookie",
-                        f"ss_lock={self._lock_secret()}; Path=/; HttpOnly; SameSite=Lax",
+                        f"ss_lock={secret}; Path=/; HttpOnly; SameSite=Lax",
                     )
                     self.end_headers()
                     self.wfile.write(b'{"ok": true}')
@@ -782,7 +874,11 @@ def make_handler(controller, addon, on_settings_saved, state):
                 saved = {}
                 for sid, kind in SETUP_SETTINGS.items():
                     if sid in data:
-                        _addon_write(addon, sid, kind, data[sid])
+                        try:
+                            _addon_write(addon, sid, kind, data[sid])
+                        except ValueError as e:
+                            self._json({"error": str(e)}, 400)
+                            return
                         saved[sid] = _addon_read(addon, sid, kind)
                 state.last_ping = 0.0
                 HOME.clearProperty(PROP_WEB_SETUP)
@@ -798,7 +894,11 @@ def make_handler(controller, addon, on_settings_saved, state):
                 saved = {}
                 for sid, kind in EDITABLE_SETTINGS.items():
                     if sid in data:
-                        _addon_write(addon, sid, kind, data[sid])
+                        try:
+                            _addon_write(addon, sid, kind, data[sid])
+                        except ValueError as e:
+                            self._json({"error": str(e)}, 400)
+                            return
                         saved[sid] = _addon_read(addon, sid, kind)
                 on_settings_saved()
                 self._json({"saved": saved})

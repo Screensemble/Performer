@@ -295,6 +295,21 @@ class ServerLink:
                 log(f"link: rejected by server: {msg['error']}")
                 self._auth_rejected = time.time()
                 return
+            # Connected — the offline clock for the degraded local admin
+            # restarts the moment the link drops (see web._degraded()).
+            self.c._offline_since = None
+            # Server pushes its admin *verifier* (scrypt salt:hash) so the
+            # disconnected admin can use the conductor login as its gate
+            # without ever holding the raw password.
+            ah = msg.get("auth_hash")
+            if ah and ":" in ah:
+                try:
+                    with open(
+                        os.path.join(PROFILE, "server_auth.hash"), "w"
+                    ) as f:
+                        f.write(ah)
+                except OSError:
+                    pass
             # Server-assigned id (manual setup without a pairing flow) —
             # remember it so reconnects bind the same registry entry.
             pid = msg.get("player_id")
@@ -400,8 +415,11 @@ class ServerLink:
         for sid, kind in EDITABLE_SETTINGS.items():
             data = msg.get("settings") or {}
             if sid in data:
-                _addon_write(self.addon, sid, kind, data[sid])
-                saved[sid] = _addon_read(self.addon, sid, kind)
+                try:
+                    _addon_write(self.addon, sid, kind, data[sid])
+                    saved[sid] = _addon_read(self.addon, sid, kind)
+                except ValueError as e:
+                    saved[sid] = f"rejected: {e}"
         xbmcgui.Window(10000).setProperty("screensemble.command", "reload")
         self._reply(
             {"type": "settings_saved", "id": msg.get("id"),
@@ -646,6 +664,8 @@ class ServerLink:
                 log(f"link down ({e}); retry in {backoff:.0f}s")
             finally:
                 xbmcgui.Window(10000).setProperty(LINK_PROPERTY, "offline")
+                if self.c._offline_since is None:
+                    self.c._offline_since = time.monotonic()
                 try:
                     self.sock.close()
                 except Exception:

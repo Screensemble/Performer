@@ -160,6 +160,7 @@ class StandbyController:
         self.content_due = 0.0
         self.maintenance = False
         self._maint_since = 0.0
+        self._offline_since = None   # managed link down since (degraded admin)
         self._last_back = 0.0
         self.slideshow_files = []
         self.video_files = []
@@ -876,6 +877,7 @@ class StandbyController:
     def resume_from_menu(self, with_content=True):
         self.maintenance = False
         self._maint_since = 0.0
+        self._offline_since = None   # managed link down since (degraded admin)
         self.content_pending = False
         self.rescan_media()
         if with_content:
