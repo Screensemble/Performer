@@ -238,6 +238,7 @@ class ServerLink:
         except Exception:
             pass
         return {
+            "name": self.c.config.get("device_name") or "",
             "mode": "server",
             "setup_complete": self.c.config.get("setup_complete"),
             "current": self.c.current_name(),
