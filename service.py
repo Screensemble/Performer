@@ -91,6 +91,8 @@ def load_config():
         "image_path": addon.getSetting("idle_image"),
         "scaling": addon.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
 
+        "update_check": addon.getSettingBool("update_check"),
+        "update_time": addon.getSetting("update_time") or "00:00",
         "web_admin": addon.getSettingBool("web_admin"),
         "web_port": addon.getSettingInt("web_port") or 8282,
         "splash_seconds": addon.getSettingInt("splash_seconds"),
@@ -170,6 +172,7 @@ class StandbyController:
         self._previewing = False        # preview interrupted the sequence
         self._slide_next = 0.0
         self._promo_files = []          # feature cards for empty playlists
+        self._update_last = None        # date key of the last update check
         self._promo_index = 0
         self.prepared = False              # conductor: staged, awaiting "go"
         self._prepare_pending = False       # pause the moment a video opens
@@ -618,6 +621,22 @@ class StandbyController:
         ):
             self._pull_settle = None
             self.defer_content_refresh()
+
+        # Daily addon-update check: UpdateAddonRepos makes Kodi re-fetch
+        # every repository index; its installer then stops this service,
+        # swaps the files and restarts — the addon only pulls the trigger.
+        if self.config.get("update_check"):
+            now = time.localtime()
+            hh, _, mm = (self.config.get("update_time") or "0:0").partition(":")
+            fire_key = (now.tm_year, now.tm_mon, now.tm_mday)
+            if (
+                self._update_last != fire_key
+                and (now.tm_hour, now.tm_min) >= (int(hh or 0), int(mm or 0))
+            ):
+                self._update_last = fire_key
+                log("daily update check — refreshing addon repositories")
+                xbmc.executebuiltin("UpdateAddonRepos")
+                xbmc.executebuiltin("UpdateLocalAddons")
 
         state = getattr(self, "_media_state", None) or {}
         if (

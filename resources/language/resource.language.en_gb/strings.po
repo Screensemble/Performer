@@ -186,3 +186,15 @@ msgctxt "#30085"
 msgid "Skip TLS verification (self-signed)"
 msgstr ""
 
+
+msgctxt "#30086"
+msgid "Updates"
+msgstr ""
+
+msgctxt "#30087"
+msgid "Daily update check"
+msgstr ""
+
+msgctxt "#30088"
+msgid "Check for updates at (24h HH:MM)"
+msgstr ""

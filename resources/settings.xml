@@ -104,6 +104,21 @@
                     <data>RunScript(script.screensemble,pick,local_media_folder,0)</data>
                 </setting>
             </group>
+            <group id="8" label="30086">
+                <setting id="update_check" type="boolean" label="30087">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="update_time" type="string" label="30088">
+                    <level>0</level>
+                    <default>00:00</default>
+                    <constraints>
+                        <allowempty>false</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+            </group>
             <group id="7" label="30082">
                 <setting id="local_lock" type="boolean" label="30083">
                     <level>0</level>
