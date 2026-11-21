@@ -156,6 +156,52 @@ def restart_app():
     xbmc.executebuiltin("Quit")
 
 
+# Lives outside the addon dir so Kodi can't kill it when the addon is
+# disabled mid-sequence — a script from the addon would die before it
+# could re-enable.
+_RELAUNCH_SRC = '''\
+import json
+import time
+
+import xbmc
+
+ADDON = "script.screensemble"
+
+
+def _rpc(method, params):
+    return xbmc.executeJSONRPC(json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}))
+
+
+_rpc("Addons.SetAddonEnabled", {"addonid": ADDON, "enabled": False})
+time.sleep(2)
+# Re-enable until it sticks; Kodi handles the addon lifecycle async,
+# so an enable that lands too early can be swallowed.
+for _ in range(8):
+    _rpc("Addons.SetAddonEnabled", {"addonid": ADDON, "enabled": True})
+    res = json.loads(_rpc(
+        "Addons.GetAddonDetails",
+        {"addonid": ADDON, "properties": ["enabled"]}))
+    if res.get("result", {}).get("addon", {}).get("enabled"):
+        break
+    time.sleep(1.5)
+'''
+
+
+def relaunch_service():
+    """Restart the addon service the way a Kodi boot does — disable then
+    re-enable it through JSON-RPC. Works even when the service thread is
+    dead, unlike the window-property resume which only a live service
+    can see."""
+    helper = os.path.join(PROFILE, "service-relaunch.py")
+    with open(helper, "w", encoding="utf-8") as f:
+        f.write(_RELAUNCH_SRC)
+    xbmc.executebuiltin(
+        "RunScript(special://profile/addon_data/"
+        "script.screensemble/service-relaunch.py)"
+    )
+
+
 class StandbyWindow(xbmcgui.WindowXML):
     """Dedicated fullscreen standby window (spec 7.8.1).
 

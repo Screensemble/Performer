@@ -8,10 +8,11 @@ import sys
 import xbmcaddon
 import xbmcgui
 
+from standby import relaunch_service
+
 ADDON = xbmcaddon.Addon()
 HOME = xbmcgui.Window(10000)
 COMMAND_PROPERTY = "screensemble.command"
-COMMAND_RESUME = "resume"
 COMMAND_RELOAD = "reload"
 
 # Browse types for Dialog().browse: 0=directory 1=file 2=image
@@ -60,13 +61,13 @@ def main():
         choice = xbmcgui.Dialog().select(
             f"Screensemble — managed by {addr}",
             [
-                "Resume standby",
+                "Resume",
                 "Settings",
                 "Re-run setup wizard",
             ],
         )
         if choice == 0:
-            HOME.setProperty(COMMAND_PROPERTY, COMMAND_RESUME)
+            relaunch_service()
         elif choice == 1:
             ADDON.openSettings()
         elif choice == 2:
@@ -77,7 +78,7 @@ def main():
         "Screensemble",
         [
             "Media list & playlist controls",
-            "Resume standby",
+            "Resume",
             "Settings",
             "Re-run setup wizard",
         ],
@@ -86,7 +87,7 @@ def main():
         from media import run_media_ui
         run_media_ui()
     elif choice == 1:
-        HOME.setProperty(COMMAND_PROPERTY, COMMAND_RESUME)
+        relaunch_service()
     elif choice == 2:
         ADDON.openSettings()
     elif choice == 3:

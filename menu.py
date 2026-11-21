@@ -150,10 +150,8 @@ def list_root(update=False):
         media.setArt({"icon": "DefaultFolder.png"})
         rows.append((media, _url(action="mediawin")))
     rows += [
-        _control_row("Restart content", action="cmd", cmd="restart"),
         _control_row(
-            "Resume standby", action="cmd", cmd="resume",
-            back="root",
+            "Resume (restarts the service)", action="relaunch",
         ),
         _control_row("Addon settings", action="settings"),
     ]
@@ -451,6 +449,9 @@ def main():
         return
     if action == "item":
         item_menu(params["name"])
+    elif action == "relaunch":
+        from standby import relaunch_service
+        relaunch_service()
     elif action == "cmd":
         _command(params["cmd"])
     elif action == "shuffle":

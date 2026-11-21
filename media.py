@@ -21,7 +21,7 @@ import xbmcaddon
 import xbmcgui
 
 import medialist
-from standby import ADDON_PATH, ensure_runtime_assets
+from standby import ADDON_PATH, ensure_runtime_assets, relaunch_service
 from menu import (
     DAYS,
     DEFAULT_SLIDE_SECONDS,
@@ -117,10 +117,8 @@ class MediaWindow(xbmcgui.WindowXML):
             "Playlist editing is done on the Screensemble server — this "
             "display only offers local recovery commands while managed."
         )
-        self._row(lst, "Restart content", "cmd", "restart",
-                  "rescan the media folder and restart playback")
-        self._row(lst, "Resume standby", "cmd", "resume",
-                  "return to the standby surface")
+        self._row(lst, "Resume", "relaunch",
+                  "restart the addon service — the same thing a Kodi boot does")
         self._row(lst, "Close", "close")
 
     def _render_main(self, lst):
@@ -283,6 +281,10 @@ class MediaWindow(xbmcgui.WindowXML):
             return
         if action in ("close", "back"):
             self._back() if action == "back" else self.close()
+            return
+        if action == "relaunch":
+            relaunch_service()
+            self.close()
             return
         if action == "cmd":
             _command(payload)
