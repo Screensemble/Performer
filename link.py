@@ -642,19 +642,25 @@ class ServerLink:
                 backoff = 2.0
                 last_status = 0.0
                 while not self._stop:
-                    if time.monotonic() - last_status >= self.STATUS_EVERY:
-                        self._reply(
-                            {"type": "status", "status": self._status()}
-                        )
-                        last_status = time.monotonic()
                     try:
+                        if time.monotonic() - last_status >= self.STATUS_EVERY:
+                            self._reply(
+                                {"type": "status", "status": self._status()}
+                            )
+                            last_status = time.monotonic()
                         opcode, data = _recv(self.sock)
                     except socket.timeout:
+                        # An idle socket must never drop the link — a
+                        # timeout from recv (or a slow pong send) just
+                        # means "nothing arrived this second".
                         continue
                     if opcode == 0x8:
                         raise OSError("server closed")
                     if opcode == 0x9:
-                        _send_frame(self.sock, 0xA, data)
+                        try:
+                            _send_frame(self.sock, 0xA, data)
+                        except socket.timeout:
+                            pass
                         continue
                     if opcode != 0x1:
                         continue
