@@ -237,18 +237,21 @@ class StandbyWindow(xbmcgui.WindowXML):
         for cid in SCALING_CONTROLS.values():
             img = self.getControl(cid)
             img.setVisible(cid == self._img_cid)
-        if cfg["idle_type"] == 1 and cfg["image_path"]:
+        if self._last_img:
+            # The engine owns the surface once it's painted — a staged
+            # underlay (next item preloaded under a video) or the live
+            # slide. The reveal must show it, not the config's idle image.
+            img = self.getControl(selected)
+            img.setColorDiffuse("FFFFFFFF")
+            img.setImage(self._last_img)
+            self.getControl(CONTROL_BG).setColorDiffuse(
+                hex_to_colordiffuse(cfg["letterbox_color"])
+            )
+        elif cfg["idle_type"] == 1 and cfg["image_path"]:
             resolved = resolve_path(cfg["image_path"])
             self._last_img = resolved
             self.getControl(selected).setColorDiffuse("FFFFFFFF")
             self.getControl(selected).setImage(resolved)
-            self.getControl(CONTROL_BG).setColorDiffuse(
-                hex_to_colordiffuse(cfg["letterbox_color"])
-            )
-        elif self._last_img:
-            img = self.getControl(selected)
-            img.setColorDiffuse("FFFFFFFF")
-            img.setImage(self._last_img)
             self.getControl(CONTROL_BG).setColorDiffuse(
                 hex_to_colordiffuse(cfg["letterbox_color"])
             )
