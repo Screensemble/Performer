@@ -418,9 +418,9 @@ def make_handler(controller, addon, on_settings_saved, state):
         # sessions die on Kodi restart, which suits a display appliance.
 
         def _lock_on(self):
-            if controller.config.get("local_lock") and controller.config.get(
-                "local_password"
-            ):
+            # A set admin password gates the web admin on its own —
+            # local_lock only controls the on-TV exit prompt.
+            if controller.config.get("local_password"):
                 return True
             # Degraded mode: the conductor's own verifier gates the admin.
             return self._degraded() and bool(self._server_hash())
@@ -533,7 +533,11 @@ def make_handler(controller, addon, on_settings_saved, state):
                     {
                         "setup_complete": controller.config["setup_complete"],
                         "settings": {
-                            sid: _addon_read(addon, sid, k)
+                            sid: (
+                                _addon_read(addon, sid, k)
+                                if sid != "local_password"
+                                else ""  # never echo a stored password
+                            )
                             for sid, k in SETUP_SETTINGS.items()
                         },
                     }
@@ -699,7 +703,14 @@ def make_handler(controller, addon, on_settings_saved, state):
                 )
             elif u.path == "/api/settings":
                 self._json(
-                    {sid: _addon_read(addon, sid, k) for sid, k in EDITABLE_SETTINGS.items()}
+                    {
+                        sid: (
+                            _addon_read(addon, sid, k)
+                            if sid != "local_password"
+                            else ""  # never echo a stored password
+                        )
+                        for sid, k in EDITABLE_SETTINGS.items()
+                    }
                 )
             elif u.path == "/api/browse":
                 # Directory picker for folder fields. Browses via Kodi's
@@ -830,12 +841,18 @@ def make_handler(controller, addon, on_settings_saved, state):
                     data = json.loads(body or b"{}")
                 except ValueError:
                     data = {}
+                user = str(data.get("username") or "").strip().lower()
                 pw = str(data.get("password") or "")
-                local_ok = hmac.compare_digest(
+                user_ok = hmac.compare_digest(user, "admin")
+                local_ok = user_ok and hmac.compare_digest(
                     pw.encode(),
                     str(controller.config.get("local_password") or "").encode(),
                 )
-                server_ok = self._degraded() and self._server_password_ok(pw)
+                server_ok = (
+                    user_ok
+                    and self._degraded()
+                    and self._server_password_ok(pw)
+                )
                 if self._lock_on() and (local_ok or server_ok):
                     secret = (
                         self._lock_secret()
@@ -851,7 +868,9 @@ def make_handler(controller, addon, on_settings_saved, state):
                     self.end_headers()
                     self.wfile.write(b'{"ok": true}')
                 else:
-                    self._json({"error": "wrong password"}, 401)
+                    self._json(
+                        {"error": "incorrect username or password"}, 401
+                    )
             elif u.path == "/api/logout":
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")

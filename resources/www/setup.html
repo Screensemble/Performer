@@ -129,9 +129,25 @@ const steps = [
       h +=
         `<div class="row">` +
         `<button onclick="back()">Back</button>` +
-        `<button class="primary" onclick="finish()">Finish setup</button>` +
+        `<button class="primary" onclick="next()">Continue</button>` +
         `</div>`;
       $("body").innerHTML = h;
+    },
+  },
+  {
+    title: "Local admin",
+    desc: "Set a password for this display's local admin — it gates the admin page and, with the screen lock on, leaving the presentation. At least 8 characters with a letter and a digit.",
+    render() {
+      $("body").innerHTML =
+        `<label>Username</label>` +
+        `<input type="text" value="admin" disabled>` +
+        `<label>Password</label>` +
+        `<input type="password" id="local_password" autocomplete="new-password" placeholder="leave empty for none">` +
+        `<div class="row">` +
+        `<button onclick="step = 1; show()">Back</button>` +
+        `<button class="primary" onclick="finish()">Finish setup</button>` +
+        `</div>` +
+        `<button style="text-align:center;margin-top:14px" onclick="skipPw()">Skip — leave unsecured</button>`;
     },
   },
   {
@@ -157,6 +173,8 @@ function show() {
 }
 function pick(m) { state.player_mode = m; step = 1; show(); }
 function back() { step = 0; show(); }
+function next() { collect(); step = 2; show(); }
+function skipPw() { state.local_password = ""; finish(); }
 
 // Folder picker — browses the display's filesystem through Kodi's
 // Files.GetSources/GetDirectory via /api/browse.
@@ -224,9 +242,20 @@ function collect() {
     state.device_name = v("device_name");
     state.server_media_dir = v("server_media_dir");
   }
+  if (step === 2) {
+    const pw = v("local_password");
+    if (pw !== undefined) state.local_password = pw;
+  }
 }
 async function finish() {
   collect();
+  if (state.local_password &&
+      !(state.local_password.length >= 8 &&
+        /[a-zA-Z]/.test(state.local_password) &&
+        /\d/.test(state.local_password))) {
+    $("err").textContent = "Password needs at least 8 characters, one letter, one digit.";
+    return;
+  }
   if (state.player_mode === 1 && !state.server_address) {
     $("err").textContent = "Enter the conductor address."; return;
   }
@@ -238,7 +267,7 @@ async function finish() {
       body: JSON.stringify(state),
     });
     if (!r.ok) throw new Error(await r.text());
-    step = 2; show();
+    step = 3; show();
   } catch (e) {
     $("err").textContent = "Save failed — is the display still reachable?";
   }

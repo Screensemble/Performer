@@ -405,7 +405,11 @@ class ServerLink:
     def _read_settings(self):
         from web import EDITABLE_SETTINGS, _addon_read
         return {
-            sid: _addon_read(self.addon, sid, k)
+            sid: (
+                _addon_read(self.addon, sid, k)
+                if sid != "local_password"
+                else ""  # never send a stored password over the socket
+            )
             for sid, k in EDITABLE_SETTINGS.items()
         }
 

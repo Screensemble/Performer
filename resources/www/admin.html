@@ -189,6 +189,13 @@
         </label>
         <label>Auto-resume after minutes in Kodi UI (0 = never)
           <input name="maintenance_timeout" type="number" min="0" max="1440"></label>
+        <h3 style="margin:18px 0 6px">Local admin</h3>
+        <label>Username <input value="admin" disabled></label>
+        <label>New password (empty keeps current)
+          <input name="local_password" type="password" autocomplete="new-password"
+                 placeholder="8+ chars, a letter and a digit"></label>
+        <label style="margin:0"><input type="checkbox" id="clearPw"> Clear the admin password (unsecures the local admin)</label>
+        <label style="margin:0"><input type="checkbox" name="local_lock"> Screen lock — require the password to exit the presentation</label>
         <button type="submit">Save settings</button>
       </form>
     </div>
@@ -494,18 +501,29 @@ async function loadSettings() {
   settings = await api('/api/settings');
   const f = $('settingsForm');
   for (const k in settings) {
-    if (f.elements[k]) f.elements[k].value = settings[k];
+    const el = f.elements[k];
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!settings[k];
+    else el.value = settings[k];
   }
 }
 async function saveSettings() {
   const f = $('settingsForm');
   const data = {};
   for (const k in settings) {
-    if (f.elements[k]) {
-      data[k] = f.elements[k].type === 'number' ? +f.elements[k].value : f.elements[k].value;
-    }
+    const el = f.elements[k];
+    if (!el) continue;
+    if (el.type === 'checkbox') data[k] = el.checked;
+    else if (el.type === 'number') data[k] = +el.value;
+    else data[k] = el.value;
   }
-  await api('/api/settings', {method: 'POST', body: JSON.stringify(data)});
+  if ($('clearPw').checked) {
+    data.local_password = '';
+  } else if (!data.local_password) {
+    delete data.local_password;   // empty = keep the current password
+  }
+  const r = await api('/api/settings', {method: 'POST', body: JSON.stringify(data)});
+  if (r && r.error) { toast('Not saved: ' + r.error); return false; }
   toast('Settings saved — applied live');
   setTimeout(refresh, 800);
   return false;

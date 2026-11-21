@@ -45,8 +45,10 @@
     <img class="wordmark" src="/wordmark.png" alt="Screensemble">
   </div>
   <form id="f">
+    <label for="u">Username</label>
+    <input id="u" type="text" autocomplete="username" value="admin" required autofocus>
     <label for="p">Password</label>
-    <input id="p" type="password" autocomplete="current-password" required autofocus>
+    <input id="p" type="password" autocomplete="current-password" required>
     <button id="btn" type="submit">Unlock</button>
   </form>
   <div class="err" id="err"></div>
@@ -60,10 +62,13 @@ document.getElementById('f').onsubmit = async e => {
   try {
     const r = await fetch('/api/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: document.getElementById('p').value }),
+      body: JSON.stringify({
+        username: document.getElementById('u').value,
+        password: document.getElementById('p').value,
+      }),
     });
     if (r.ok) { location.href = '/'; return; }
-    err('Incorrect password');
+    err('Incorrect username or password');
   } catch {
     err('Could not reach the display');
   } finally {
