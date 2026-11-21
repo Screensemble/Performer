@@ -214,6 +214,8 @@ class StandbyWindow(xbmcgui.WindowXML):
     on_action = None  # callable(action), set by service
     _img_cid = None   # id of the currently visible image control
     _last_img = None  # texture currently loaded — dedupes re-sets
+    _closed = False   # doModal returned — Kodi keeps the window in its
+                    # stack, still dispatching actions and re-inits to it
 
     def _image_control(self):
         """The scaling-selected image control. apply() hides the image
@@ -231,23 +233,34 @@ class StandbyWindow(xbmcgui.WindowXML):
         """Swap the visible image control's texture (slideshow rotation).
         useCache=False is required — otherwise Kodi re-serves the previously
         displayed texture and the image never changes."""
-        if path == self._last_img:
-            return   # already showing — a re-set would flicker the texture
+        if self._closed or path == self._last_img:
+            return   # zombie window, or already showing — a re-set would
+                    # flicker the texture either way
+        try:
+            img = self._image_control()
+            img.setColorDiffuse("FFFFFFFF")   # undo clear_standby_image tint
+            img.setImage(path, False)
+        except RuntimeError:
+            return  # window mid-init/teardown — next apply() repaints
         self._last_img = path
-        img = self._image_control()
-        img.setColorDiffuse("FFFFFFFF")   # undo clear_standby_image tint
-        img.setImage(path, False)
 
     def clear_standby_image(self):
         """Blank the image layer to black — the load gap between video
         items then shows an intentional cut instead of stale artwork or
         the standby card."""
         self._last_img = None
-        img = self._image_control()
-        img.setImage(WHITE_PNG, False)
-        img.setColorDiffuse("FF000000")
+        try:
+            img = self._image_control()
+            img.setImage(WHITE_PNG, False)
+            img.setColorDiffuse("FF000000")
+        except RuntimeError:
+            pass  # window mid-init/teardown
 
     def onInit(self):
+        if self._closed:
+            # Zombie re-activation — insta-close on the GUI thread.
+            self.close()
+            return
         self.apply()
 
     def apply(self):
@@ -263,6 +276,8 @@ class StandbyWindow(xbmcgui.WindowXML):
         # Deliberately do NOT call the base implementation: every action we
         # don't explicitly handle is swallowed, so ESC/back cannot close the
         # window and expose the Kodi UI.
+        if self._closed:
+            return  # zombie — dead window still receives propagated actions
         if self.on_action:
             self.on_action(action)
 

@@ -376,7 +376,7 @@ class ServerLink:
             elif cmd in ("next", "prev"):
                 self.c._advance_seq(1 if cmd == "next" else -1)
             elif cmd == "exit_ui":
-                self.c.exit_to_kodi()
+                self.c.request_exit()
             elif cmd == "restart_app":
                 restart_app()
             elif cmd == "reboot":

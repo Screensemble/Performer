@@ -196,9 +196,13 @@ msgid "Daily update check"
 msgstr ""
 
 msgctxt "#30088"
-msgid "Check for updates at (24h HH:MM)"
+msgid "Check for updates at (24h HH:MM, 1-hour window)"
 msgstr ""
 
 msgctxt "#30089"
 msgid "Auto-resume after minutes in Kodi UI (0 = never)"
+msgstr ""
+
+msgctxt "#30090"
+msgid "Show maintenance screen after exit"
 msgstr ""

@@ -16,6 +16,7 @@ from standby import (
 )
 import medialist
 from medialist import IMAGE_EXTS, VIDEO_EXTS
+from maintenance import MaintenanceWindow
 from splash import SplashWindow
 from web import AdminServer, post_json
 
@@ -95,6 +96,7 @@ def load_config():
         "update_time": addon.getSetting("update_time") or "00:00",
         "web_admin": addon.getSettingBool("web_admin"),
         "maintenance_timeout": addon.getSettingInt("maintenance_timeout"),
+        "maintenance_ui": addon.getSettingBool("maintenance_ui"),
         "web_port": addon.getSettingInt("web_port") or 8282,
         "splash_seconds": addon.getSettingInt("splash_seconds"),
         "splash_show_server": addon.getSettingBool("splash_show_server"),
@@ -160,6 +162,7 @@ class StandbyController:
         self.content_due = 0.0
         self.maintenance = False
         self._maint_since = 0.0
+        self._maint_ui_dismissed = False  # maintenance window backed out this session
         self._offline_since = None   # managed link down since (degraded admin)
         self._last_back = 0.0
         self.slideshow_files = []
@@ -176,6 +179,7 @@ class StandbyController:
         self._slide_next = 0.0
         self._promo_files = []          # feature cards for empty playlists
         self._update_last = None        # date key of the last update check
+        self._update_deferred = None    # date key of a deferred check (log once)
         self._promo_index = 0
         self.prepared = False              # conductor: staged, awaiting "go"
         self._prepare_pending = False       # pause the moment a video opens
@@ -558,9 +562,30 @@ class StandbyController:
         self.window = win
         self._slide_next = time.perf_counter() + DEFAULT_SLIDE_SECONDS
         self.window_open = True
+        threading.Thread(
+            target=self._watch_abort,
+            args=(abort_check, lambda: self.window_open),
+            daemon=True,
+        ).start()
         win.doModal()  # returns when exit_to_kodi()/shutdown closes it
+        win._closed = True  # dead — Kodi may keep it in the window stack
         self.window_open = False
         self.window = None
+
+    def _watch_abort(self, abort, alive):
+        """Kodi stops a service by flagging abortRequested — but the main
+        thread is parked inside a modal doModal and cannot notice until the
+        window closes, so the whole interpreter (web admin, link, window
+        callbacks) zombies on indefinitely, still eating input. Post backs
+        so the modal's own handler tears it down on the GUI thread; direct
+        close() here would wedge on the GUI bridge lock."""
+        while alive() and not abort():
+            time.sleep(0.4)
+        for _ in range(6):
+            if not alive():
+                break
+            xbmc.executebuiltin("Action(back)")
+            time.sleep(0.5)
 
     def _view_config(self):
         cfg = dict(self.config)
@@ -591,12 +616,16 @@ class StandbyController:
     def current_name(self):
         """Name of the playlist item on screen — the playing file for
         videos, the shown image for image items."""
-        try:
-            cur = self.player.getPlayingFile() or ""
-            if cur:
-                return os.path.basename(cur)
-        except Exception:
-            pass
+        # getPlayingFile() logs an exception on Kodi's side whenever nothing
+        # is playing even though the catch swallows it — gate on the cached
+        # flag so image slides don't spam the log every tick.
+        if self.player.playing:
+            try:
+                cur = self.player.getPlayingFile() or ""
+                if cur:
+                    return os.path.basename(cur)
+            except Exception:
+                pass
         if 0 <= self._seq_pos < len(self.sequence):
             item = self.sequence[self._seq_pos]
             if item["kind"] == "image" and self.window_open:
@@ -646,14 +675,28 @@ class StandbyController:
         # Daily addon-update check: UpdateAddonRepos makes Kodi re-fetch
         # every repository index; its installer then stops this service,
         # swaps the files and restarts — the addon only pulls the trigger.
+        # A landed update kills playback and tears down the windows, so a
+        # staged performance defers it to the next tick where nothing is
+        # armed; fire_key still makes it once-per-day, not once-per-attempt.
         if self.config.get("update_check"):
             now = time.localtime()
             hh, _, mm = (self.config.get("update_time") or "0:0").partition(":")
             fire_key = (now.tm_year, now.tm_mon, now.tm_mday)
-            if (
-                self._update_last != fire_key
-                and (now.tm_hour, now.tm_min) >= (int(hh or 0), int(mm or 0))
-            ):
+            # Fire only inside the hour starting at update_time — the old
+            # "first tick at/after" catch-up meant a box booted mid-day
+            # installed updates mid-presentation; a gallery box must keep
+            # the swap inside the dead-hour window. Also means a service
+            # restart outside the window can't re-fire the same day's check.
+            span = (
+                (now.tm_hour * 60 + now.tm_min)
+                - (int(hh or 0) * 60 + int(mm or 0))
+            ) % 1440
+            due = self._update_last != fire_key and span < 60
+            if due and (self.prepared or self._perform_deadline):
+                if self._update_deferred != fire_key:
+                    self._update_deferred = fire_key
+                    log("daily update check deferred — performance staged")
+            elif due:
                 self._update_last = fire_key
                 log("daily update check — refreshing addon repositories")
                 xbmc.executebuiltin("UpdateAddonRepos")
@@ -869,6 +912,26 @@ class StandbyController:
             xbmc.executebuiltin("PlayerControl(RepeatOff)")
             log(f"preview video: {name}")
 
+    def request_exit(self):
+        """Foreign-thread exit path (web admin, conductor command).
+
+        A direct window.close() from a non-GUI thread wedges on Kodi's
+        GUI bridge lock and takes every later xbmcgui call with it — so
+        post back-presses instead; the standby window's own double-back
+        exit runs on the GUI thread. Three covers a fullscreen video —
+        the first back just leaves the player."""
+        if not (self.window_open or self.player.playing):
+            return
+
+        def _post():
+            for _ in range(3):
+                if self.maintenance:  # exit landed — don't back on Kodi UI
+                    break
+                xbmc.executebuiltin("Action(back)")
+                time.sleep(0.6)
+
+        threading.Thread(target=_post, daemon=True).start()
+
     def exit_to_kodi(self):
         # Optional kiosk lock — every exit path (double-back, the actions
         # menu's "Exit to Kodi UI") funnels here, so one password gate
@@ -888,6 +951,7 @@ class StandbyController:
                 return
         self.maintenance = True
         self._maint_since = time.perf_counter()
+        self._maint_ui_dismissed = False
         self.close_standby()  # run_standby()'s doModal() returns, window drops
         log("exited to Kodi UI — resume via Programs > Screensemble")
         notify("Standby exited. Resume from Programs > Screensemble")
@@ -895,6 +959,7 @@ class StandbyController:
     def resume_from_menu(self, with_content=True):
         self.maintenance = False
         self._maint_since = 0.0
+        self._maint_ui_dismissed = False
         self._offline_since = None   # managed link down since (degraded admin)
         self.content_pending = False
         self.rescan_media()
@@ -1149,6 +1214,9 @@ def main():
             and not controller.maintenance
             and not controller.window_open
         ):
+            # Same settle as the maintenance branch — give the previous
+            # modal's teardown a GUI pump before doModal-ing the next one.
+            monitor.waitForAbort(0.5)
             try:
                 controller.run_standby(monitor.abortRequested)
             except Exception as e:
@@ -1156,6 +1224,34 @@ def main():
                 controller.window = None
                 log(f"standby window failed: {e} — retrying")
                 monitor.waitForAbort(1.0)
+        elif (
+            controller.maintenance
+            and controller.config.get("maintenance_ui")
+            and not controller._maint_ui_dismissed
+        ):
+            # Branded pause screen — Resume / Settings / Continue-to-Kodi.
+            # doModal returns on any of those, on an external resume (the
+            # window's ticker notices maintenance clear), or on abort.
+            # Settle briefly: the standby modal's teardown is still in
+            # flight when doModal returns — open the next modal too soon
+            # and Kodi may render it without ever making it the active
+            # modal (input falls through to the home screen).
+            monitor.waitForAbort(0.5)
+            try:
+                maint = MaintenanceWindow(
+                    "maintenance.xml", ADDON_PATH, "Default", "1080i"
+                )
+                maint.controller = controller
+                maint._alive = True  # before the watcher reads it
+                threading.Thread(
+                    target=controller._watch_abort,
+                    args=(monitor.abortRequested, lambda: maint._alive),
+                    daemon=True,
+                ).start()
+                maint.open()
+            except Exception as e:
+                controller._maint_ui_dismissed = True
+                log(f"maintenance window failed: {e}")
         elif monitor.waitForAbort(0.5):
             break
 

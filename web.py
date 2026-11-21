@@ -1128,7 +1128,7 @@ def make_handler(controller, addon, on_settings_saved, state):
             elif cmd == "resume":
                 controller.resume_from_menu()
             elif cmd == "exit_ui":
-                controller.exit_to_kodi()
+                controller.request_exit()
             elif cmd == "restart_app":
                 restart_app()
             elif cmd == "reboot":
