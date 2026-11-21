@@ -243,6 +243,7 @@ class ServerLink:
             "setup_complete": self.c.config.get("setup_complete"),
             "current": self.c.current_name(),
             "playing": self.c.player.playing,
+            "paused": xbmc.getCondVisibility("Player.Paused"),
             "prepared": self.c.prepared,
             "maintenance": self.c.maintenance,
             "standby_window": self.c.window_open,
@@ -355,6 +356,12 @@ class ServerLink:
                     self.c.player.stop()
             elif cmd == "play_item":
                 self.c.play_item(msg.get("name") or "")
+            elif cmd == "pause":
+                self.c.player.pause()
+            elif cmd in ("next", "prev"):
+                self.c._advance_seq(1 if cmd == "next" else -1)
+            elif cmd == "exit_ui":
+                self.c.exit_to_kodi()
             elif cmd == "restart_app":
                 restart_app()
             elif cmd == "reboot":

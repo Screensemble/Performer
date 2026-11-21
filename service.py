@@ -94,6 +94,7 @@ def load_config():
         "update_check": addon.getSettingBool("update_check"),
         "update_time": addon.getSetting("update_time") or "00:00",
         "web_admin": addon.getSettingBool("web_admin"),
+        "maintenance_timeout": addon.getSettingInt("maintenance_timeout"),
         "web_port": addon.getSettingInt("web_port") or 8282,
         "splash_seconds": addon.getSettingInt("splash_seconds"),
         "splash_show_server": addon.getSettingBool("splash_show_server"),
@@ -158,6 +159,7 @@ class StandbyController:
         self.content_pending = False      # start content once the window is up
         self.content_due = 0.0
         self.maintenance = False
+        self._maint_since = 0.0
         self._last_back = 0.0
         self.slideshow_files = []
         self.video_files = []
@@ -866,12 +868,14 @@ class StandbyController:
                 log("exit blocked by screen lock")
                 return
         self.maintenance = True
+        self._maint_since = time.perf_counter()
         self.close_standby()  # run_standby()'s doModal() returns, window drops
         log("exited to Kodi UI — resume via Programs > Screensemble")
         notify("Standby exited. Resume from Programs > Screensemble")
 
     def resume_from_menu(self, with_content=True):
         self.maintenance = False
+        self._maint_since = 0.0
         self.content_pending = False
         self.rescan_media()
         if with_content:
@@ -980,6 +984,14 @@ def poll_loop(monitor, controller):
             elif cmd.startswith("play:"):
                 controller.play_item(cmd[5:])
 
+        # Left in the Kodi UI too long — auto-resume so the display never
+        # sits unattended on a launcher screen (0 = stay until resumed).
+        timeout = controller.config.get("maintenance_timeout", 0)
+        if (controller.maintenance and timeout and controller._maint_since
+                and time.perf_counter() - controller._maint_since > timeout * 60):
+            log("maintenance timeout — resuming presentation")
+            controller.resume_from_menu()
+
         # Pairing offer from the web /pair endpoint — confirmed on the TV.
         if HOME.getProperty(PROP_PAIR_URL) and not controller._pair_dialog:
             controller._pair_dialog = True
@@ -1070,9 +1082,11 @@ def main():
     worker = threading.Thread(target=poll_loop, args=(monitor, controller), daemon=True)
     worker.start()
 
-    # Local-mode web admin: settings, uploads, transport control over LAN.
+    # Web admin in every mode — settings, uploads, transport control for
+    # whoever's on the LAN; managed mode proxies the same UI via the
+    # conductor too.
     web = None
-    if config["web_admin"] and config["player_mode"] == 0:
+    if config["web_admin"]:
         try:
             web = AdminServer(
                 controller,

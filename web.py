@@ -51,6 +51,7 @@ EDITABLE_SETTINGS = {
     "local_media_folder": "str",
     "local_lock": "bool",
     "local_password": "str",
+    "maintenance_timeout": "int",
     "tls_insecure": "bool",
     "idle_color": "str",
     "letterbox_color": "str",
@@ -211,22 +212,31 @@ def make_handler(controller, addon, on_settings_saved, state):
                 and controller.config.get("setup_complete")
             )
 
+        # Human-facing surface that stays open when the display is managed:
+        # the admin UI itself, status reads, settings, transport commands,
+        # and the lock's own endpoints. Playlist/content mutation and the
+        # setup/pairing flows remain conductor-owned.
+        _MANAGED_GET = {
+            "/", "/admin.html", "/api/status", "/api/media", "/api/info",
+            "/api/settings", "/login", "/favicon.ico", "/favicon.png",
+            "/logo.png", "/wordmark.png",
+        }
+        _MANAGED_POST = {
+            "/api/command", "/api/settings", "/api/login", "/api/logout",
+        }
+
         def _managed_block(self):
             """Gate a request in managed mode. Returns True when the
-            request was handled (blocked or served the notice page)."""
+            request was handled (blocked) and the caller must stop."""
             u = urllib.parse.urlparse(self.path)
-            if self.command == "GET" and u.path in (
-                "/api/status", "/api/media", "/api/info"
-            ):
+            if self.command == "GET" and u.path in self._MANAGED_GET:
                 return False
-            if u.path == "/":
-                self._pair_page(
-                    "Managed display",
-                    "This display is managed by a Screensemble server — "
-                    "the local admin is off.",
-                )
-            else:
-                self._json({"error": "display is managed by a server"}, 403)
+            if self.command == "POST" and u.path in self._MANAGED_POST:
+                return False
+            self._json(
+                {"error": "content on this display is managed by the conductor"},
+                403,
+            )
             return True
 
         def _pair_page(self, title, msg, close=False):
@@ -415,8 +425,7 @@ def make_handler(controller, addon, on_settings_saved, state):
             if self._managed() and self._managed_block():
                 return
             if (
-                not self._managed()
-                and self._lock_on()
+                self._lock_on()
                 and not self._lock_open(u)
                 and not self._authed()
             ):
@@ -597,6 +606,7 @@ def make_handler(controller, addon, on_settings_saved, state):
                         "current": current,
                         "free_gb": free_gb,
                         "maintenance": controller.maintenance,
+                        "paused": xbmc.getCondVisibility("Player.Paused"),
                         "standby_window": controller.window_open,
                         "videos": len(controller.video_files),
                         "images": len(controller.slideshow_files),
@@ -722,8 +732,7 @@ def make_handler(controller, addon, on_settings_saved, state):
             if self._managed() and self._managed_block():
                 return
             if (
-                not self._managed()
-                and self._lock_on()
+                self._lock_on()
                 and not self._lock_open(u)
                 and not self._authed()
             ):
@@ -928,8 +937,7 @@ def make_handler(controller, addon, on_settings_saved, state):
             if self._managed() and self._managed_block():
                 return
             if (
-                not self._managed()
-                and self._lock_on()
+                self._lock_on()
                 and not self._lock_open(u)
                 and not self._authed()
             ):
@@ -992,6 +1000,16 @@ def make_handler(controller, addon, on_settings_saved, state):
                 controller.prepare()
             elif cmd in ("perform", "go"):
                 controller.perform()
+            elif cmd == "pause":
+                controller.player.pause()
+            elif cmd in ("next", "prev"):
+                if controller.maintenance:
+                    controller.resume_from_menu(with_content=False)
+                controller._advance_seq(1 if cmd == "next" else -1)
+            elif cmd == "resume":
+                controller.resume_from_menu()
+            elif cmd == "exit_ui":
+                controller.exit_to_kodi()
             elif cmd == "restart_app":
                 restart_app()
             elif cmd == "reboot":

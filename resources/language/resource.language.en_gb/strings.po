@@ -198,3 +198,7 @@ msgstr ""
 msgctxt "#30088"
 msgid "Check for updates at (24h HH:MM)"
 msgstr ""
+
+msgctxt "#30089"
+msgid "Auto-resume after minutes in Kodi UI (0 = never)"
+msgstr ""

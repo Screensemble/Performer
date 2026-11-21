@@ -138,6 +138,17 @@
                     <default>false</default>
                     <control type="toggle"/>
                 </setting>
+                <setting id="maintenance_timeout" type="integer" label="30089">
+                    <level>0</level>
+                    <default>10</default>
+                    <constraints>
+                        <minimum>0</minimum>
+                        <maximum>1440</maximum>
+                    </constraints>
+                    <control type="slider" format="integer">
+                        <popup>false</popup>
+                    </control>
+                </setting>
             </group>
         </category>
         <category id="connection" label="30020">
