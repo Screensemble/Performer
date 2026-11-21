@@ -12,6 +12,11 @@ on:
   release:
     types: [published]
 
+# Simultaneous releases race on the shared `repo` branch — serialize them.
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
