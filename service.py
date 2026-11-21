@@ -188,36 +188,20 @@ class StandbyController:
 
     # -- standby presentation -------------------------------------------------
 
-    def rescan_media(self):
-        """Build the effective playlist: media-folder files plus remote URL
-        entries, in playlist order, skipping disabled items and items
-        whose schedule doesn't match right now."""
-        self.slideshow_files = []
-        self.video_files = []
-        state = medialist.load_state()
-        self._media_state = state
-        disabled = set(state["disabled"])
-        scheds = state["schedules"]
-
-        def active(name):
-            return name not in disabled and medialist.schedule_active(
-                scheds.get(name)
-            )
-
-        paths = {}   # display name -> playable path or URL
-        kinds = {}   # display name -> "video" | "image"
+    def _media_folder(self):
         # Managed displays play the server cache folder; local displays
         # the configured local folder. Both fall back to the built-in dir.
-        if self.config.get("player_mode") == 1:
-            folder = (
-                self.config.get("server_media_dir")
-                or medialist.DEFAULT_MEDIA_DIR
-            )
-        else:
-            folder = (
-                self.config.get("local_media_folder")
-                or medialist.DEFAULT_MEDIA_DIR
-            )
+        return (
+            self.config.get("server_media_dir")
+            if self.config.get("player_mode") == 1
+            else self.config.get("local_media_folder")
+        ) or medialist.DEFAULT_MEDIA_DIR
+
+    def _media_sources(self, state):
+        """Media folder scan plus URL entries -> (paths, kinds) name maps."""
+        paths = {}   # display name -> playable path or URL
+        kinds = {}   # display name -> "video" | "image"
+        folder = self._media_folder()
         if folder:
             try:
                 folder = resolve_path(folder)
@@ -238,23 +222,54 @@ class StandbyController:
             ext = os.path.splitext(u["url"].split("?")[0])[1].lower()
             kinds[u["name"]] = "image" if ext in IMAGE_EXTS else "video"
             paths[u["name"]] = u["url"]
+        return paths, kinds
 
-        # Catalog = every known item in stored order (pre-active filter) —
-        # the proxied admin API lists disabled/scheduled-off items too.
-        names_all = medialist.sort_names(list(paths), state)
+    def _build_catalog(self, paths, kinds, state):
+        """Every known item in stored order (pre-active filter) — the
+        proxied admin API lists disabled/scheduled-off items too."""
+        catalog = []
         url_names = {u["name"] for u in state["urls"]}
-        self.catalog = []
-        for n in names_all:
+        for n in medialist.sort_names(list(paths), state):
             size = None
             if n not in url_names:
                 try:
                     size = os.path.getsize(paths[n])
                 except OSError:
                     pass
-            self.catalog.append(
+            catalog.append(
                 {"name": n, "kind": kinds[n],
                  "remote": n in url_names, "size": size}
             )
+        return catalog
+
+    def refresh_catalog(self):
+        """Rebuild the admin-facing listing without touching the play
+        sequence — mutations show immediately while playback changes
+        still wait for the next item boundary."""
+        state = medialist.load_state()
+        self._media_state = state
+        paths, kinds = self._media_sources(state)
+        self.catalog = self._build_catalog(paths, kinds, state)
+
+    def rescan_media(self):
+        """Build the effective playlist: media-folder files plus remote URL
+        entries, in playlist order, skipping disabled items and items
+        whose schedule doesn't match right now."""
+        self.slideshow_files = []
+        self.video_files = []
+        state = medialist.load_state()
+        self._media_state = state
+        disabled = set(state["disabled"])
+        scheds = state["schedules"]
+
+        def active(name):
+            return name not in disabled and medialist.schedule_active(
+                scheds.get(name)
+            )
+
+        paths, kinds = self._media_sources(state)
+        self.catalog = self._build_catalog(paths, kinds, state)
+        names_all = [s["name"] for s in self.catalog]
         names = [n for n in names_all if active(n)]
         # Manifest touch: playlist members stay hot in the cache —
         # evictions expire least-recently-touched orphans first. The cap
@@ -262,7 +277,7 @@ class StandbyController:
         medialist.touch_manifest(names_all)
         if self.config.get("player_mode") == 1:
             medialist.enforce_cache_limit(
-                folder,
+                resolve_path(self._media_folder()),
                 (self.config.get("cache_max_mb") or 0) * 1048576,
             )
         # Unified interleaved sequence — the playlist order is honored
@@ -289,7 +304,7 @@ class StandbyController:
         )
         log(
             f"media scan: {len(self.video_files)} video(s), "
-            f"{len(self.slideshow_files)} image(s) in {folder}"
+            f"{len(self.slideshow_files)} image(s) in {self._media_folder()}"
         )
 
     def request_content(self, delay=4.0):
@@ -311,7 +326,10 @@ class StandbyController:
 
     def defer_content_refresh(self):
         """Queue a content update for the next item boundary so the
-        current piece finishes seamlessly."""
+        current piece finishes seamlessly. The admin catalog rebuilds
+        immediately — it is just a listing, so deletes/edits show up in
+        the UIs right away while only playback waits."""
+        self.refresh_catalog()
         self._pending_refresh = True
         log("content update queued for the next item boundary")
 
