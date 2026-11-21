@@ -59,6 +59,7 @@ class SplashWindow(xbmcgui.WindowXML):
     _timer = None
     _seconds = 0
     _opened_at = 0.0
+    _closed = False      # doModal returned — kill zombie re-activations
 
     # Actions that should NOT dismiss the splash: no-ops and mouse moves that
     # Kodi delivers to a freshly opened window.
@@ -69,23 +70,43 @@ class SplashWindow(xbmcgui.WindowXML):
     DISMISS_GRACE = 0.75  # seconds before a keypress can skip the splash
 
     def show_for(self, seconds):
-        """Open modally; close on any input or when the timer fires. In
-        Server mode the countdown only starts once the connection probe
-        resolves (connected or timed out)."""
+        """Open modally; close on any input or when the timer fires. The
+        countdown runs from window-open — the sequence engine starts
+        content at splash_seconds + 2s, so the close must land first."""
         self._seconds = seconds
         self._opened_at = time.perf_counter()
         self.doModal()
+        self._closed = True
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
 
     def _arm(self):
-        if self._timer is None and self._seconds > 0:
-            self._timer = threading.Timer(self._seconds, self.close)
-            self._timer.daemon = True
-            self._timer.start()
+        if self._timer is not None or self._seconds <= 0 or self._closed:
+            return
+        # Count down from doModal, not from now — the server probe can
+        # resolve seconds late, and closing after the first video has
+        # gone fullscreen knocks it back to the GUI and gets it stopped.
+        # close() also stays on the Timer thread — a builtin action hits
+        # whatever window is focused (Action(back) on fullscreen video
+        # kills playback).
+        remaining = self._seconds - (time.perf_counter() - self._opened_at)
+        self._timer = threading.Timer(max(0.5, remaining), self._expire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _expire(self):
+        # Mark closed before close() so a re-init fired mid-teardown hits
+        # the zombie guard instead of probing and arming another timer.
+        self._closed = True
+        self.close()
 
     def onInit(self):
+        if self._closed:
+            # Zombie re-activation — Kodi re-showed the modal stack after
+            # a fullscreen transition. Kill it on the main thread.
+            self.close()
+            return
         # No <visible> condition in the skin (it stomps setVisible each
         # frame) — hide until we decide to show.
         for cid in QR_GROUP:
@@ -126,6 +147,8 @@ class SplashWindow(xbmcgui.WindowXML):
     def _probe(self, addr):
         state = "connected" if check_server(addr) else "unreachable"
         log(f"splash: server {addr} -> {state}")
+        if self._closed:
+            return
         try:
             self._set_dot(state)
         except Exception:
@@ -165,7 +188,9 @@ class SplashWindow(xbmcgui.WindowXML):
         aid = action.getId()
         if aid in self.IGNORED_ACTIONS:
             return
-        if time.perf_counter() - self._opened_at < self.DISMISS_GRACE:
+        elapsed = time.perf_counter() - self._opened_at
+        if elapsed < self.DISMISS_GRACE and elapsed < self._seconds:
             return
         log(f"splash dismissed by action {aid}")
+        self._closed = True
         self.close()  # any real button press skips the splash
