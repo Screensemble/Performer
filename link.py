@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import socket
 import ssl
 import struct
@@ -36,30 +37,48 @@ def log(msg):
 
 
 def hardware_id():
-    """Stable device identity — a salted hash of the primary MAC so the
-    server can rebind this display to the same registry entry across
-    addon reinstalls/resets. Falls back to a persisted random id."""
-    try:
-        mac = (xbmc.getInfoLabel("Network.MacAddress") or "").strip()
-        if mac:
-            import hashlib
-            return hashlib.sha256(
-                f"screensemble:{mac.lower()}".encode()
-            ).hexdigest()[:12]
-    except Exception:
-        pass
+    """Stable device identity — persisted in device.id at first
+    resolution and pinned thereafter. Prefers a salted hash of the
+    primary MAC so the server can rebind this display to the same
+    registry entry across profile resets; falls back to a random id.
+    Kodi InfoLabels return the literal string "Busy" while unresolved,
+    so only a real MAC shape is accepted — and pinning the first-
+    resolved id keeps later MAC churn (eth↔wifi) from moving it."""
     path = os.path.join(PROFILE, "device.id")
     try:
         if os.path.exists(path):
             with open(path) as f:
-                return f.read().strip()
+                did = f.read().strip()
+            if did:
+                return did
+    except Exception:
+        pass
+    mac = ""
+    try:
+        mon = xbmc.Monitor()
+        for _ in range(40):  # ~10s: InfoLabels report "Busy" early at boot
+            cand = (xbmc.getInfoLabel("Network.MacAddress") or "").strip()
+            if re.match(r"^([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}$", cand):
+                mac = cand
+                break
+            if mon.waitForAbort(0.25):
+                break
+    except Exception:
+        pass
+    if mac:
+        did = hashlib.sha256(
+            f"screensemble:{mac.lower()}".encode()
+        ).hexdigest()[:12]
+    else:
         import uuid
         did = uuid.uuid4().hex[:12]
+    try:
         with open(path, "w") as f:
             f.write(did)
-        return did
     except Exception:
-        return ""
+        pass
+    log(f"device identity: {did} ({'mac' if mac else 'random'})")
+    return did
 
 
 # -- minimal RFC6455 client ----------------------------------------------
