@@ -16,7 +16,7 @@ Kodi service addon that turns a device (e.g., Android TV box) into a Screensembl
 
 ## Tech
 
-- Kodi 19 (Matrix) or later, Python 3 API (`xbmc.python` 3.0.0). Whether to support Kodi 18 is an open question.
+- Kodi 19 (Matrix) or later — the Python 3 ABI (`xbmc.python` 3.0.0) is the hard floor: Kodi 18 runs Python 2 and can't install the zip at all. Every API the addon calls is v19 or older (`WindowXML`/`doModal`, `Monitor`, `PlayList`, `onAVStarted`, `setImage(useCache)` is v13-era, `getSettingBool` is v18-era), and the code is Python 3.8-clean for Matrix's runtime — so 19 is the minimum by capability, not preference.
 - Service addon (`xbmc.service`) — starts with Kodi, no user-facing UI.
 - Use only official addon APIs: `xbmc`, `xbmcvfs`, `xbmcaddon`, `xbmcgui`, `special://` paths.
 - Media lives in the addon profile directory by default; a custom folder is an advanced settings option.
