@@ -233,6 +233,23 @@
                     <control type="edit" format="string"/>
                 </setting>
             </group>
+            <group id="3" label="30091">
+                <setting id="ensemble_hold" type="boolean" label="30092">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="loop_count" type="integer" label="30093">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <minimum>0</minimum>
+                        <step>1</step>
+                        <maximum>999</maximum>
+                    </constraints>
+                    <control type="slider" format="integer"/>
+                </setting>
+            </group>
         </category>
     </section>
 </settings>

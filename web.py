@@ -64,6 +64,8 @@ EDITABLE_SETTINGS = {
     "idle_scaling": "int",
     "idle_type": "int",
     "idle_image": "str",
+    "ensemble_hold": "bool",
+    "loop_count": "int",
 
     "device_name": "str",
 }

@@ -91,6 +91,8 @@ def load_config():
         "letterbox_color": addon.getSetting("letterbox_color") or "#000000",
         "image_path": addon.getSetting("idle_image"),
         "scaling": addon.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
+        "ensemble_hold": addon.getSettingBool("ensemble_hold"), # idle until conductor performs
+        "loop_count": addon.getSettingInt("loop_count"),        # 0=forever
 
         "update_check": addon.getSettingBool("update_check"),
         "update_time": addon.getSetting("update_time") or "00:00",
@@ -184,6 +186,9 @@ class StandbyController:
         self.prepared = False              # conductor: staged, awaiting "go"
         self._prepare_pending = False       # pause the moment a video opens
         self._perform_deadline = None        # mono ms deadline for a synced go
+        self._run_active = False            # a performed run is playing out
+        self._run_passes = 0                # full sequence passes this run
+        self._run_loops = 0                 # pass limit (0 = loop forever)
         self._pair_dialog = False   # on-TV pair confirm currently showing
         self._pending_refresh = False  # content change waits for a boundary
         self._pulls_inflight = 0    # server pulls still downloading
@@ -395,6 +400,14 @@ class StandbyController:
         the resident standby window for their duration."""
         if not (0 <= self._seq_pos < len(self.sequence)):
             return
+        if (
+            self.config.get("ensemble_hold")
+            and not self._run_active
+            and not self.prepared
+        ):
+            # Ensemble-held — the display idles until a conductor 'perform'
+            # starts a run; the local sequence never starts on its own.
+            return
         item = self.sequence[self._seq_pos]
         self._seq_started = time.perf_counter()
         if item["kind"] == "video":
@@ -436,8 +449,33 @@ class StandbyController:
         if not self.sequence:
             self._seq_playing = False
             return
-        self._seq_pos = (self._seq_pos + delta) % len(self.sequence)
+        new_pos = (self._seq_pos + delta) % len(self.sequence)
+        if (
+            self._run_active
+            and delta > 0
+            and self._seq_pos >= 0
+            and new_pos <= self._seq_pos
+        ):
+            # Pass boundary — a performed run ends after loop_count passes
+            # and the display re-arms instead of wrapping forever.
+            self._run_passes += 1
+            if self._run_loops and self._run_passes >= self._run_loops:
+                self._end_run()
+                return
+        self._seq_pos = new_pos
         self._play_seq()
+
+    def _end_run(self):
+        """A counted run finished its last pass — return to 'Arm': stop
+        playback, show the idle surface, and stage item 0 for the next
+        'go'. Display never sits on a dead end."""
+        self._run_active = False
+        self._seq_playing = False
+        self._seq_ended_since = None
+        if self.player.isPlaying():
+            self.player.stop()
+        log("run complete — re-armed")
+        self.prepare()
 
     def return_to_standby(self):
         """Called when playback finishes. The standby window is still resident
@@ -463,9 +501,11 @@ class StandbyController:
         if item["kind"] == "video":
             self._prepare_pending = True
             self._seq_playing = True
-            if self.window_open:
-                self.window.clear_standby_image()
-            self.player.play(item["path"])
+            # Windowed staging — the video decodes behind the standby window
+            # and pauses on its first frame, but fullscreenvideo never
+            # activates, so Kodi's pause seekbar can never satisfy its
+            # visible-condition. Releasing goes fullscreen at 'go'.
+            self.player.play(item["path"], windowed=True)
             xbmc.executebuiltin("PlayerControl(RepeatOff)")
         else:
             self._seq_playing = False
@@ -489,6 +529,14 @@ class StandbyController:
 
     def _release(self):
         self._perform_deadline = None
+        # A performed run counts passes — when loop_count hits, the run ends
+        # and the display re-arms (idle surface + item 0 staged again).
+        # _run_active is set even when nothing was prepared: under
+        # ensemble_hold the _play_seq gate keys on it, and a bare 'perform'
+        # must start the run from cold too.
+        self._run_passes = 0
+        self._run_loops = self.config.get("loop_count") or 0
+        self._run_active = True
         if not self.prepared:
             self.request_content()
             return
@@ -498,6 +546,10 @@ class StandbyController:
                 "Player.Paused"
             ):
                 self.player.pause()      # resume the staged video
+                # The staged video played windowed — going fullscreen now
+                # is the reveal (resume alone re-enters fullscreen, but ask
+                # explicitly in case Kodi skips the transition).
+                xbmc.executebuiltin("ActivateWindow(fullscreenvideo)")
             elif not self.player.playing:
                 self._seq_playing = False
                 self._play_seq()         # staged video never opened
@@ -521,9 +573,10 @@ class StandbyController:
             if plpos >= 0:
                 # A chained playlist advanced internally — sync the
                 # engine's position without re-playing anything.
-                self._seq_pos = (self._pl_base + plpos) % len(
-                    self.sequence
-                )
+                new_pos = (self._pl_base + plpos) % len(self.sequence)
+                if self._run_active and new_pos < self._seq_pos:
+                    self._run_passes += 1  # RepeatAll wrap inside the chain
+                self._seq_pos = new_pos
                 self._seq_started = time.perf_counter()
                 if plpos == pl.size() - 1:
                     # Last video of the chain: preload the next item under
@@ -536,8 +589,9 @@ class StandbyController:
             # PlayerControl only takes effect on a live player — calling
             # it before play() is a no-op, so repeat mode is set here.
             # A chain covering the whole sequence (all-video) loops
-            # internally forever: zero-gap, including wraparound.
-            if pl.size() >= len(self.sequence):
+            # internally forever: zero-gap, including wraparound — unless
+            # a counted run is playing out, which must end at the boundary.
+            if pl.size() >= len(self.sequence) and not self._run_loops:
                 xbmc.executebuiltin("PlayerControl(RepeatAll)")
             else:
                 xbmc.executebuiltin("PlayerControl(RepeatOff)")
@@ -596,6 +650,22 @@ class StandbyController:
         if cur and cur["kind"] == "image":
             cfg["idle_type"] = 1
             cfg["image_path"] = cur["path"]
+        elif self.prepared or (
+            self.config.get("ensemble_hold") and not self._run_active
+        ):
+            # Armed / ensemble-held — the staged video hides windowed+paused
+            # behind this surface: the pushed idle image, else the brand
+            # standby, else a promo card. Never a bare color while waiting.
+            if self.config.get("image_path"):
+                cfg["idle_type"] = 1
+            elif os.path.exists(STANDBY_IMG):
+                cfg["idle_type"] = 1
+                cfg["image_path"] = STANDBY_IMG
+            elif self._promo_files:
+                cfg["idle_type"] = 1
+                cfg["image_path"] = self._promo_files[self._promo_index]
+            else:
+                cfg["idle_type"] = 0
         elif not self.sequence:
             if self.config.get("player_mode") == 1 \
                     and os.path.exists(STANDBY_IMG):
@@ -1043,9 +1113,22 @@ def poll_loop(monitor, controller):
     while not monitor.abortRequested():
         # Leaving fullscreen video while it still plays in the background
         # (what Back does in stock Kodi) means "stop" for signage — this
-        # gives Back=Stop behavior without a user keymap.
+        # gives Back=Stop behavior without a user keymap. Armed videos are
+        # the exception: they stage windowed+paused behind the standby
+        # window, so a stray fullscreen activation while armed gets pushed
+        # back instead — a paused video in fullscreen would let the
+        # seekbar OSD leak through.
         fs = xbmc.getCondVisibility("Window.IsActive(fullscreenvideo)")
-        if was_fullscreen and not fs and player.isPlaying():
+        paused = xbmc.getCondVisibility("Player.Paused")
+        if controller.prepared and fs and paused:
+            xbmc.executebuiltin("Action(back)")
+        elif (
+            was_fullscreen and not fs and player.isPlaying()
+            and not controller.prepared
+        ):
+            # While armed the staged video is *meant* to sit non-fullscreen
+            # and paused — pushing it back out of a stray fullscreen must
+            # not then count as Back=Stop and destroy the stage.
             player.stop()
             log("left fullscreen video with playback running — stopped")
         was_fullscreen = fs

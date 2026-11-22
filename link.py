@@ -264,6 +264,8 @@ class ServerLink:
             "playing": self.c.player.playing,
             "paused": xbmc.getCondVisibility("Player.Paused"),
             "prepared": self.c.prepared,
+            "held": bool(self.c.config.get("ensemble_hold")),
+            "idle": bool(self.c.config.get("image_path")),
             "maintenance": self.c.maintenance,
             "standby_window": self.c.window_open,
             "items": len(self.c.sequence),
@@ -357,6 +359,14 @@ class ServerLink:
             threading.Thread(
                 target=self._pull_file, args=(msg,), daemon=True
             ).start()
+            return
+        if t == "set_idle":
+            threading.Thread(
+                target=self._pull_idle, args=(msg,), daemon=True
+            ).start()
+            return
+        if t == "clear_idle":
+            self._clear_idle(msg)
             return
         if t == "get_file":
             self._send_file(msg)
@@ -599,6 +609,98 @@ class ServerLink:
             log(f"pull {name} failed: {e}")
         finally:
             self.c.pull_finished()
+
+    def _fetch_on_server(self, url):
+        """Shared paired-server validation + open for pulls. Only http(s)
+        on the host this display's link is connected to — a forged URL
+        can never reach a file:// or another host."""
+        pu = urllib.parse.urlparse(str(url))
+        server = urllib.parse.urlparse(self._ws_url() or "")
+        if pu.scheme not in ("http", "https") or (
+            (pu.hostname or "").lower() != (server.hostname or "").lower()
+        ):
+            raise ValueError("pull url is not on the paired server")
+        opener = _NO_REDIRECT
+        if pu.scheme == "https" and self.c.config.get("tls_insecure"):
+            opener = urllib.request.build_opener(
+                _RefuseRedirect,
+                urllib.request.HTTPSHandler(
+                    context=ssl._create_unverified_context()
+                ),
+            )
+        return opener.open(url, timeout=30)
+
+    def _pull_idle(self, msg):
+        """Server-designated idle image — pulled into the profile (NOT the
+        media dir, or it would join the playlist), then applied as the
+        standby surface via the idle_image/idle_type settings."""
+        rid = msg.get("id")
+        name = os.path.basename(str(msg.get("name") or "idle.png"))
+        url = msg.get("url")
+        err, dest = None, None
+        try:
+            if not url:
+                raise ValueError("no url")
+            if not os.path.splitext(name)[1].lower() in (
+                ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"
+            ):
+                raise ValueError("idle image must be an image file")
+            dest = os.path.join(PROFILE, "idle" + os.path.splitext(name)[1].lower())
+            with self._fetch_on_server(url) as r:
+                tmp = dest + ".part"
+                with open(tmp, "wb") as f:
+                    while True:
+                        chunk = r.read(262144)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                want = (msg.get("sha256") or "").lower()
+                if want:
+                    h = hashlib.sha256()
+                    with open(tmp, "rb") as f:
+                        for chunk in iter(lambda: f.read(1048576), b""):
+                            h.update(chunk)
+                    if h.hexdigest() != want:
+                        raise ValueError("sha256 mismatch")
+                os.replace(tmp, dest)
+            # Resolve to a filesystem path the image control can load —
+            # PROFILE is already absolute, but keep it canonical.
+            self._set_idle_settings(resolve_path(dest))
+            log(f"idle image set: {name}")
+        except Exception as e:
+            err = str(e)
+            if dest:
+                try:
+                    os.remove(dest + ".part")
+                except OSError:
+                    pass
+            log(f"idle pull failed: {e}")
+        self._reply(
+            {"type": "idle_result", "id": rid, "ok": err is None,
+             "error": err}
+        )
+        self._reply({"type": "status", "status": self._status()})
+
+    def _set_idle_settings(self, path):
+        from web import _addon_write
+        _addon_write(self.addon, "idle_image", "str", path)
+        _addon_write(self.addon, "idle_type", "int", 1)
+        self.c.config["image_path"] = path
+        self.c.config["idle_type"] = 1
+        self.c.refresh_view()
+
+    def _clear_idle(self, msg):
+        """Conductor-cleared idle image — back to the color/brand surface."""
+        from web import _addon_write
+        _addon_write(self.addon, "idle_image", "str", "")
+        _addon_write(self.addon, "idle_type", "int", 0)
+        self.c.config["image_path"] = ""
+        self.c.config["idle_type"] = 0
+        self.c.refresh_view()
+        self._reply(
+            {"type": "idle_result", "id": msg.get("id"), "ok": True}
+        )
+        self._reply({"type": "status", "status": self._status()})
 
     def _send_file(self, msg):
         """Proxy a media file back to the server — thumbnails/previews

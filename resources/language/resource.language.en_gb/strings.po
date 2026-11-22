@@ -206,3 +206,15 @@ msgstr ""
 msgctxt "#30090"
 msgid "Show maintenance screen after exit"
 msgstr ""
+
+msgctxt "#30091"
+msgid "Performance"
+msgstr ""
+
+msgctxt "#30092"
+msgid "Ensemble hold — idle until the conductor performs"
+msgstr ""
+
+msgctxt "#30093"
+msgid "Loop count (0 = play forever)"
+msgstr ""
