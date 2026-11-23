@@ -218,3 +218,27 @@ msgstr ""
 msgctxt "#30093"
 msgid "Loop count (0 = play forever)"
 msgstr ""
+
+msgctxt "#30095"
+msgid "Display hours"
+msgstr ""
+
+msgctxt "#30096"
+msgid "Restrict display hours"
+msgstr ""
+
+msgctxt "#30097"
+msgid "Days (0 = Monday, e.g. 0,1,2,3,4)"
+msgstr ""
+
+msgctxt "#30098"
+msgid "Open from (HH:MM)"
+msgstr ""
+
+msgctxt "#30099"
+msgid "Open until (HH:MM, earlier than 'from' = overnight)"
+msgstr ""
+
+msgctxt "#30100"
+msgid "Off-hours image (empty = black screen)"
+msgstr ""

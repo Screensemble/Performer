@@ -250,6 +250,50 @@
                     <control type="slider" format="integer"/>
                 </setting>
             </group>
+            <group id="4" label="30095">
+                <setting id="schedule_on" type="boolean" label="30096">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="schedule_days" type="string" label="30097">
+                    <level>0</level>
+                    <default>0,1,2,3,4,5,6</default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="schedule_from" type="string" label="30098">
+                    <level>0</level>
+                    <default>08:00</default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="schedule_to" type="string" label="30099">
+                    <level>0</level>
+                    <default>22:00</default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="off_image" type="string" label="30100">
+                    <level>0</level>
+                    <default></default>
+                    <constraints>
+                        <allowempty>true</allowempty>
+                    </constraints>
+                    <control type="edit" format="string"/>
+                </setting>
+                <setting id="off_image_browse" type="action" label="30063">
+                    <level>0</level>
+                    <control type="button" format="action"/>
+                    <data>RunScript(script.screensemble,pick,off_image,2)</data>
+                </setting>
+            </group>
         </category>
     </section>
 </settings>

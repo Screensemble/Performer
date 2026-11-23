@@ -66,6 +66,11 @@ EDITABLE_SETTINGS = {
     "idle_image": "str",
     "ensemble_hold": "bool",
     "loop_count": "int",
+    "schedule_on": "bool",
+    "schedule_days": "str",
+    "schedule_from": "str",
+    "schedule_to": "str",
+    "off_image": "str",
 
     "device_name": "str",
 }

@@ -93,6 +93,11 @@ def load_config():
         "scaling": addon.getSettingInt("idle_scaling"),         # 0=contain 1=cover 2=stretch
         "ensemble_hold": addon.getSettingBool("ensemble_hold"), # idle until conductor performs
         "loop_count": addon.getSettingInt("loop_count"),        # 0=forever
+        "schedule_on": addon.getSettingBool("schedule_on"),     # display hours gate
+        "schedule_days": addon.getSetting("schedule_days"),
+        "schedule_from": addon.getSetting("schedule_from"),
+        "schedule_to": addon.getSetting("schedule_to"),
+        "off_image": addon.getSetting("off_image"),             # off-hours surface (empty=black)
 
         "update_check": addon.getSettingBool("update_check"),
         "update_time": addon.getSetting("update_time") or "00:00",
@@ -189,6 +194,7 @@ class StandbyController:
         self._run_active = False            # a performed run is playing out
         self._run_passes = 0                # full sequence passes this run
         self._run_loops = 0                 # pass limit (0 = loop forever)
+        self._sched_off = False             # inside display-hours off window
         self._pair_dialog = False   # on-TV pair confirm currently showing
         self._pending_refresh = False  # content change waits for a boundary
         self._pulls_inflight = 0    # server pulls still downloading
@@ -407,6 +413,10 @@ class StandbyController:
         ):
             # Ensemble-held — the display idles until a conductor 'perform'
             # starts a run; the local sequence never starts on its own.
+            return
+        if self._sched_off and not self._run_active and not self.prepared:
+            # Display hours closed — the ambient sequence stays off; an
+            # armed stage or a performed run overrides signage hours.
             return
         item = self.sequence[self._seq_pos]
         self._seq_started = time.perf_counter()
@@ -647,6 +657,16 @@ class StandbyController:
             self.sequence[self._seq_pos]
             if 0 <= self._seq_pos < len(self.sequence) else None
         )
+        if self._sched_off and not self._run_active:
+            # Off-hours surface — the pushed off-hours image, else plain
+            # black. Deliberate and static; a performed run still covers it.
+            if self.config.get("off_image"):
+                cfg["idle_type"] = 1
+                cfg["image_path"] = self.config["off_image"]
+            else:
+                cfg["idle_type"] = 0
+                cfg["idle_color"] = "#000000"
+            return cfg
         if cur and cur["kind"] == "image":
             cfg["idle_type"] = 1
             cfg["image_path"] = cur["path"]
@@ -714,6 +734,23 @@ class StandbyController:
     def close_standby(self):
         if self.window is not None:
             self.window.close()
+
+    def _sched_now_off(self):
+        """Is the display-hours schedule currently closed? Reuses the
+        per-item schedule evaluator — same days/from/to semantics,
+        overnight windows included."""
+        if not self.config.get("schedule_on"):
+            return False
+        days = [
+            int(d) for d in
+            str(self.config.get("schedule_days") or "").split(",")
+            if d.strip().isdigit()
+        ]
+        return not medialist.schedule_active({
+            "days": days,
+            "from": self.config.get("schedule_from"),
+            "to": self.config.get("schedule_to"),
+        })
 
     def tick(self):
         """Periodic work: advance the slideshow when due, and re-scan on a
@@ -810,6 +847,29 @@ class StandbyController:
         # Nothing playing — a queued update applies immediately.
         if self._pending_refresh and not self.sequence:
             self._apply_pending_refresh()
+
+        # Display hours — outside the window the ambient signage is off:
+        # playback stops and the off surface (custom image or black) shows
+        # until the window reopens. Armed/prepared/run state overrides —
+        # a conductor-triggered performance ignores signage hours.
+        off_now = self._sched_now_off()
+        if off_now != self._sched_off:
+            self._sched_off = off_now
+            if off_now:
+                if (
+                    self._seq_playing and self.player.playing
+                    and not (self._run_active or self.prepared)
+                ):
+                    self.player.stop()
+                self.refresh_view()
+                log("display hours closed — off surface")
+            else:
+                self.refresh_view()
+                if self._seq_playing and not self.player.playing:
+                    self._play_seq()   # resume the interrupted ambient item
+                log("display hours open — resuming")
+        if self._sched_off and not (self._run_active or self.prepared):
+            return  # off-hours: the sequence machinery stays asleep
 
         if not self.sequence:
             # Empty playlist — local mode rotates the feature promos;

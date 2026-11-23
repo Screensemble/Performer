@@ -663,10 +663,11 @@ class ServerLink:
         return opener.open(url, timeout=30)
 
     def _pull_idle(self, msg):
-        """Server-designated idle image — pulled into the profile (NOT the
-        media dir, or it would join the playlist), then applied as the
-        standby surface via the idle_image/idle_type settings."""
+        """Server-designated surface image — pulled into the profile (NOT
+        the media dir, or it would join the playlist), then applied via
+        settings. slot 'idle' = armed/idle surface; 'off' = off-hours."""
         rid = msg.get("id")
+        slot = "off" if msg.get("slot") == "off" else "idle"
         name = os.path.basename(str(msg.get("name") or "idle.png"))
         url = msg.get("url")
         err, dest = None, None
@@ -677,7 +678,8 @@ class ServerLink:
                 ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"
             ):
                 raise ValueError("idle image must be an image file")
-            dest = os.path.join(PROFILE, "idle" + os.path.splitext(name)[1].lower())
+            dest = os.path.join(
+                PROFILE, slot + os.path.splitext(name)[1].lower())
             with self._fetch_on_server(url) as r:
                 tmp = dest + ".part"
                 with open(tmp, "wb") as f:
@@ -697,8 +699,8 @@ class ServerLink:
                 os.replace(tmp, dest)
             # Resolve to a filesystem path the image control can load —
             # PROFILE is already absolute, but keep it canonical.
-            self._set_idle_settings(resolve_path(dest))
-            log(f"idle image set: {name}")
+            self._set_idle_settings(resolve_path(dest), slot)
+            log(f"{slot} image set: {name}")
         except Exception as e:
             err = str(e)
             if dest:
@@ -713,21 +715,31 @@ class ServerLink:
         )
         self._reply({"type": "status", "status": self._status()})
 
-    def _set_idle_settings(self, path):
+    def _set_idle_settings(self, path, slot="idle"):
         from web import _addon_write
-        _addon_write(self.addon, "idle_image", "str", path)
-        _addon_write(self.addon, "idle_type", "int", 1)
-        self.c.config["image_path"] = path
-        self.c.config["idle_type"] = 1
+        if slot == "off":
+            _addon_write(self.addon, "off_image", "str", path)
+            self.c.config["off_image"] = path
+        else:
+            _addon_write(self.addon, "idle_image", "str", path)
+            _addon_write(self.addon, "idle_type", "int", 1)
+            self.c.config["image_path"] = path
+            self.c.config["idle_type"] = 1
         self.c.refresh_view()
 
     def _clear_idle(self, msg):
-        """Conductor-cleared idle image — back to the color/brand surface."""
+        """Conductor-cleared surface image — back to the color/brand
+        surface (idle) or black (off-hours)."""
         from web import _addon_write
-        _addon_write(self.addon, "idle_image", "str", "")
-        _addon_write(self.addon, "idle_type", "int", 0)
-        self.c.config["image_path"] = ""
-        self.c.config["idle_type"] = 0
+        slot = "off" if msg.get("slot") == "off" else "idle"
+        if slot == "off":
+            _addon_write(self.addon, "off_image", "str", "")
+            self.c.config["off_image"] = ""
+        else:
+            _addon_write(self.addon, "idle_image", "str", "")
+            _addon_write(self.addon, "idle_type", "int", 0)
+            self.c.config["image_path"] = ""
+            self.c.config["idle_type"] = 0
         self.c.refresh_view()
         self._reply(
             {"type": "idle_result", "id": msg.get("id"), "ok": True}
