@@ -12,7 +12,7 @@ pinning (documented in the site docs).
 
 ## What this is
 
-Kodi service addon that turns a device (e.g., Android TV box) into a Screensemble display. Works standalone (local playlists/schedules) or connected to a Screensemble server (Managed or Controlled mode). Responsible for the idle presentation, local asset caching, video playback, and seamless content transitions.
+Kodi service addon that turns a device (e.g., Android TV box) into a Screensemble display. Works standalone (local playlists/schedules) or connected to a Screensemble server (Managed or Orchestrated mode). Responsible for the idle presentation, local asset caching, video playback, and seamless content transitions.
 
 ## Tech
 

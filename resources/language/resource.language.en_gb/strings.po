@@ -34,7 +34,7 @@ msgid "Local (standalone)"
 msgstr ""
 
 msgctxt "#30013"
-msgid "Conductor (managed/controlled)"
+msgid "Conductor (managed/orchestrated)"
 msgstr ""
 
 msgctxt "#30014"
