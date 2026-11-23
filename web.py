@@ -450,9 +450,16 @@ def make_handler(controller, addon, on_settings_saved, state):
                 return False
             salt_hex, want_hex = h.split(":", 1)
             try:
+                # Match better-auth's scrypt exactly: Node treats a string
+                # salt as the UTF-8 bytes of the hex *text* (not decoded
+                # hex), normalizes the password NFKC, and needs the raised
+                # maxmem for N=16384,r=16 (~33MB working set).
+                import unicodedata
                 got = hashlib.scrypt(
-                    pw.encode(), salt=bytes.fromhex(salt_hex),
+                    unicodedata.normalize("NFKC", pw).encode(),
+                    salt=salt_hex.encode(),
                     n=16384, r=16, p=1, dklen=64,
+                    maxmem=128 * 16384 * 16 * 2,
                 ).hex()
             except (ValueError, OSError):
                 return False
