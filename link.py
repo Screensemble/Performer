@@ -322,15 +322,11 @@ class ServerLink:
             # Server pushes its admin *verifier* (scrypt salt:hash) so the
             # disconnected admin can use the conductor login as its gate
             # without ever holding the raw password.
-            ah = msg.get("auth_hash")
-            if ah and ":" in ah:
-                try:
-                    with open(
-                        os.path.join(PROFILE, "server_auth.hash"), "w"
-                    ) as f:
-                        f.write(ah)
-                except OSError:
-                    pass
+            if "auth_hash" in msg:
+                if msg["auth_hash"]:
+                    self._store_auth_hash(msg["auth_hash"])
+                else:
+                    self._clear_auth_hash()
             # Server-assigned id (manual setup without a pairing flow) —
             # remember it so reconnects bind the same registry entry.
             pid = msg.get("player_id")
@@ -367,6 +363,17 @@ class ServerLink:
             return
         if t == "clear_idle":
             self._clear_idle(msg)
+            return
+        if t == "auth_update":
+            # Admin password changed (or the offline_admin grant toggled)
+            # conductor-side — pushed to live displays so the degraded-mode
+            # gate tracks it without waiting for a reconnect. A null hash
+            # means revoked: drop the stored verifier entirely.
+            ah = msg.get("auth_hash")
+            if ah:
+                self._store_auth_hash(ah)
+            else:
+                self._clear_auth_hash()
             return
         if t == "get_file":
             self._send_file(msg)
@@ -531,6 +538,30 @@ class ServerLink:
             {"type": "media_op_result", "id": rid,
              "ok": err is None, "error": err}
         )
+
+    def _store_auth_hash(self, ah):
+        """Persist the conductor's admin *verifier* (scrypt salt:hash) —
+        never a raw password — so the degraded local admin can gate on the
+        conductor login while the link is down (see web._server_hash())."""
+        if not ah or ":" not in ah:
+            return
+        try:
+            tmp = os.path.join(PROFILE, "server_auth.hash.tmp")
+            dst = os.path.join(PROFILE, "server_auth.hash")
+            with open(tmp, "w") as f:
+                f.write(ah)
+            os.replace(tmp, dst)
+        except OSError:
+            pass
+
+    def _clear_auth_hash(self):
+        """The conductor revoked this display's offline admin grant — the
+        degraded admin falls back to whatever gate remains (local lock,
+        or open status) and the stored verifier is gone."""
+        try:
+            os.remove(os.path.join(PROFILE, "server_auth.hash"))
+        except OSError:
+            pass
 
     def _pull_file(self, msg):
         """Server-pushed media: download from the server over plain HTTP
