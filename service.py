@@ -494,11 +494,27 @@ class StandbyController:
 
     # -- conductor (managed mode) ------------------------------------------
 
+    def cancel(self):
+        """Conductor disarm — drop staged/run state synchronously and
+        resume the ambient sequence. Unlike 'restart' the session flags
+        clear immediately, so a prepare landing right behind it can no
+        longer be wiped by a deferred content start."""
+        self.prepared = False
+        self._perform_deadline = None
+        self._run_active = False
+        self.content_pending = False
+        if self.player.isPlaying():
+            self.player.stop()
+        self.request_content(0.5)
+
     def prepare(self):
         """Stage the sequence at item 0 and hold: a video opens paused on
         its first frame (the monitor pauses it on AV start), an image is
         shown statically. tick() does not advance while prepared — 'go'
         releases every staged display at once."""
+        # A queued ambient restart (deferred request_content) must never
+        # wipe a stage that landed after it — last write wins.
+        self.content_pending = False
         self.rescan_media()
         self.prepared = bool(self.sequence)
         if not self.prepared:
@@ -1265,7 +1281,7 @@ def poll_loop(monitor, controller):
                 controller.rescan_media()
                 controller.request_content()
                 log("setup complete — content queued")
-        elif controller.content_pending and (
+        elif controller.content_pending and not controller.prepared and (
             controller.window_open or time.perf_counter() >= controller.content_due
         ):
             # Content starts only once the standby window is resident (or the

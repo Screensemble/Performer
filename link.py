@@ -397,8 +397,14 @@ class ServerLink:
             elif cmd in ("perform", "go"):
                 self.c.perform(at_mono=msg.get("at_mono"))
             elif cmd == "restart":
+                # Explicit unstage — don't rely on the deferred content
+                # start clearing `prepared` a beat later (cancel→prepare
+                # race); a later prepare still wins via content_pending.
+                self.c.prepared = False
                 self.c.rescan_media()
                 self.c.request_content()
+            elif cmd == "cancel":
+                self.c.cancel()
             elif cmd == "resume":
                 self.c.resume_from_menu()
             elif cmd == "stop":
