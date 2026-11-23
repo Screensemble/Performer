@@ -551,6 +551,7 @@ class ServerLink:
             with open(tmp, "w") as f:
                 f.write(ah)
             os.replace(tmp, dst)
+            log("server admin verifier updated")
         except OSError:
             pass
 
