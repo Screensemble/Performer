@@ -52,7 +52,7 @@
     table.rstack td.cell-acts { display: flex; flex-wrap: wrap; gap: 6px;
       padding-top: 6px; }
     table.rstack td.cell-acts button { flex: 1; min-width: 56px;
-      padding: 10px 6px; }
+      padding: 10px 6px; white-space: nowrap; }
   }
   h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
   h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
@@ -366,7 +366,7 @@ function rowHtml(i, draggable) {
     `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit('${n}')">${ic("edit")} Edit</button> ` +
     `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑ Up</button> ` +
     `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓ Down</button> ` +
-    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")} Remove</button></td></tr>` +
+    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")} Delete</button></td></tr>` +
     editRow;
 }
 

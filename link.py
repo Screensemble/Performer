@@ -256,6 +256,13 @@ class ServerLink:
             )
         except Exception:
             pass
+        # Device info for the conductor's System tab — InfoLabels are
+        # resolved by the time status polls run (unlike early boot).
+        mac = (xbmc.getInfoLabel("Network.MacAddress") or "").strip()
+        if not re.match(r"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$", mac):
+            mac = ""
+        sw = xbmc.getInfoLabel("System.ScreenWidth") or ""
+        sh = xbmc.getInfoLabel("System.ScreenHeight") or ""
         return {
             "name": self.c.config.get("device_name") or "",
             "mode": "server",
@@ -271,6 +278,11 @@ class ServerLink:
             "items": len(self.c.sequence),
             "free_gb": free_gb,
             "pending_update": self.c._pending_refresh,
+            "ip": (xbmc.getIPAddress() or "").strip(),
+            "mac": mac,
+            "resolution": f"{sw}x{sh}" if sw and sh else "",
+            "kodi": (xbmc.getInfoLabel("System.BuildVersion") or "").strip(),
+            "uptime": (xbmc.getInfoLabel("System.Uptime") or "").strip(),
         }
 
     def _media_items(self):
