@@ -349,7 +349,9 @@ const escJ = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 function rowHtml(i, draggable) {
   const n = escJ(i.name);
   const badges =
-    (i.playing ? '<span class="badge play">playing</span>' : '') +
+    (i.playing ? `<span class="badge play" title="finishes this pass, ` +
+      `then skipped">playing${i.enabled ? '' : ' — skipped after this'}` +
+      `</span>` : '') +
     (i.remote ? '<span class="badge gray">url</span>' : '') +
     (i.schedule ? '<span class="badge gray">' + schedSummary(i.schedule) + '</span>' : '');
   const durCell = i.kind === 'image'
