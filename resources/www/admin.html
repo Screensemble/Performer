@@ -68,6 +68,8 @@
   td.num, th.num { text-align: right; }
   tr.dragging { opacity: .4; }
   tr.inactive-row td { opacity: .5; }
+  tbody tr[data-name] { cursor: pointer; }
+  tr.sel td { background: #0c1930; }
   td.handle { cursor: grab; color: var(--dim); user-select: none; width: 26px;
               font-size: 15px; }
   .badge { color: var(--cyan); font-size: 10px; border: 1px solid var(--cyan);
@@ -169,6 +171,10 @@
     <h2>Active items <small>play in order — drag to reorder</small></h2>
     <div id="bulkBar" class="row" style="display:none;margin-bottom:8px">
       <span id="bulkCount" class="muted"></span>
+      <button class="mini secondary" onclick="selPlay()">Play</button>
+      <button class="mini secondary" onclick="selEdit()">Edit</button>
+      <button class="mini secondary" onclick="selMove(-1)">↑ Up</button>
+      <button class="mini secondary" onclick="selMove(1)">↓ Down</button>
       <button class="mini" onclick="bulkEnable(true)">Enable</button>
       <button class="mini" onclick="bulkEnable(false)">Disable</button>
       <button class="mini danger" onclick="bulkDelete()">Delete</button>
@@ -359,9 +365,10 @@ function rowHtml(i, draggable) {
        title="seconds (empty = 10)" onchange="setDuration('${n}', this.value)">`
     : '—';
   const sizeCell = i.size ? fmtBytes(i.size) : '—';
-  const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
+  const editRow = editName === i.name ? `<tr class="editrow"><td colspan="6">${editHtml(i)}</td></tr>` : '';
   return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
-      class="${i.enabled ? '' : 'inactive-row'}">` +
+      class="${i.enabled ? '' : 'inactive-row'}${selSet.has(i.name) ? ' sel' : ''}"
+      onclick="rowTap(event, '${n}')">` +
     `<td class="handle"><input type="checkbox" class="itemsel" ` +
       `value="${escH(i.name)}" ${selSet.has(i.name) ? 'checked' : ''} ` +
       `onchange="onItemSel(this)">${draggable ? ' ⋮⋮' : ''}</td>` +
@@ -371,13 +378,7 @@ function rowHtml(i, draggable) {
     `<td class="num" data-l="Size">${sizeCell}</td>` +
     `<td class="num" data-l="Sec">${durCell}</td>` +
     `<td data-l="On"><input type="checkbox" ${i.enabled ? 'checked' : ''}
-      onchange="toggleItem('${n}', this.checked)"></td>` +
-    `<td class="num cell-acts">` +
-    `<button class="mini secondary" title="play now" onclick="playItem('${n}')">${ic("play")} Play</button> ` +
-    `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit('${n}')">${ic("edit")} Edit</button> ` +
-    `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑ Up</button> ` +
-    `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓ Down</button> ` +
-    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")} Delete</button></td></tr>` +
+      onchange="toggleItem('${n}', this.checked)"></td></tr>` +
     editRow;
 }
 
@@ -385,7 +386,7 @@ function tableHtml(items, draggable) {
   return '<table class="rstack"><thead><tr>' +
     '<th><input type="checkbox" title="select all" onclick="selAllIn(this)"></th>' +
     '<th></th><th>Name</th><th class="num">Size</th>' +
-    '<th class="num">Sec</th><th>On</th><th></th></tr></thead><tbody>' +
+    '<th class="num">Sec</th><th>On</th></tr></thead><tbody>' +
     items.map(i => rowHtml(i, draggable)).join('') + '</tbody></table>';
 }
 
@@ -395,6 +396,25 @@ function onItemSel(cb) {
   cb.checked ? selSet.add(cb.value) : selSet.delete(cb.value);
   updateBulkBar();
 }
+// Tap anywhere on a row toggles it (except its own inputs/links) —
+// selection drives the top-edge action bar, not per-row buttons.
+function rowTap(ev, name) {
+  if (ev.target.closest('input,button,a,select,textarea,label')) return;
+  const cb = ev.currentTarget.querySelector('.itemsel');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  onItemSel(cb);
+}
+function selOne() {
+  if (selSet.size !== 1) {
+    toast(`select exactly one item (${selSet.size} selected)`);
+    return null;
+  }
+  return [...selSet][0];
+}
+function selPlay() { const n = selOne(); if (n) playItem(n); }
+function selEdit() { const n = selOne(); if (n) toggleEdit(n); }
+function selMove(dir) { const n = selOne(); if (n) moveItem(n, dir); }
 function selAllIn(cb) {
   const on = cb.checked;
   cb.closest('table').querySelectorAll('.itemsel').forEach(c => {
