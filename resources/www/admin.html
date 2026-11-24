@@ -29,6 +29,16 @@
   header .dot.on { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
   .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
   main { max-width: 980px; margin: 0 auto; padding: 20px 16px 60px; }
+  @media (max-width: 700px) {
+    main { padding: 12px 10px 48px; }
+    header { flex-wrap: wrap; }
+    header nav { order: 3; flex-basis: 100%; overflow-x: auto;
+                 scrollbar-width: none; }
+    header nav::-webkit-scrollbar { display: none; }
+    header nav .tab { white-space: nowrap; }
+    #activeList, #inactiveList { overflow-x: auto; }
+    .row { flex-wrap: wrap; }
+  }
   h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
   h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
   h2:first-child { margin-top: 0; }

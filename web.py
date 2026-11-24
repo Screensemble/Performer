@@ -302,6 +302,7 @@ def make_handler(controller, addon, on_settings_saved, state):
             script = "<script>window.close()</script>" if close else ""
             body = (
                 "<!doctype html><meta charset=utf-8>"
+                "<meta name=viewport content='width=device-width,initial-scale=1'>"
                 f"<title>{title}</title>"
                 "<body style='background:#000;color:#dde3e8;font:20px sans-serif;"
                 "display:flex;align-items:center;justify-content:center;height:100vh;"
