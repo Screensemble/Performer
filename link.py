@@ -272,6 +272,9 @@ class ServerLink:
             "paused": xbmc.getCondVisibility("Player.Paused"),
             "prepared": self.c.prepared,
             "held": bool(self.c.config.get("ensemble_hold")),
+            "loop_wait": bool(self.c._loop_wait),
+            "waiting": bool(self.c._loop_wait and self.c.prepared),
+            "round_done": self.c._round_done,
             "idle": bool(self.c.config.get("image_path")),
             "maintenance": self.c.maintenance,
             "standby_window": self.c.window_open,
@@ -317,6 +320,11 @@ class ServerLink:
                 _send(self.sock, json.dumps(obj))
         except OSError:
             pass
+
+    def push_status(self):
+        """Unscheduled status push — wait-loop boundaries need the
+        conductor to see round_done immediately, not on the next 5s poll."""
+        self._reply({"type": "status", "status": self._status()})
 
     def _on_message(self, msg):
         t = msg.get("type")
@@ -405,9 +413,12 @@ class ServerLink:
         err = None
         try:
             if cmd in ("prepare", "arm"):
-                self.c.prepare()
+                self.c.prepare(loop_wait=msg.get("loop_wait"))
             elif cmd in ("perform", "go"):
-                self.c.perform(at_mono=msg.get("at_mono"))
+                self.c.perform(
+                    at_mono=msg.get("at_mono"),
+                    loop_wait=msg.get("loop_wait"),
+                )
             elif cmd == "restart":
                 # Explicit unstage — don't rely on the deferred content
                 # start clearing `prepared` a beat later (cancel→prepare

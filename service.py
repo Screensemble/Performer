@@ -194,6 +194,9 @@ class StandbyController:
         self._run_active = False            # a performed run is playing out
         self._run_passes = 0                # full sequence passes this run
         self._run_loops = 0                 # pass limit (0 = loop forever)
+        self._loop_wait = False             # wait-loop: re-arm at each boundary
+        self._round_done = 0                # boundaries waited at this session
+        self._run_end_pending = False       # boundary hit; tick does the re-arm
         self._sched_off = False             # inside display-hours off window
         self._pair_dialog = False   # on-TV pair confirm currently showing
         self._pending_refresh = False  # content change waits for a boundary
@@ -459,6 +462,8 @@ class StandbyController:
         if not self.sequence:
             self._seq_playing = False
             return
+        if self._run_end_pending:
+            return      # boundary re-arm already queued for the tick
         new_pos = (self._seq_pos + delta) % len(self.sequence)
         if (
             self._run_active
@@ -467,10 +472,13 @@ class StandbyController:
             and new_pos <= self._seq_pos
         ):
             # Pass boundary — a performed run ends after loop_count passes
-            # and the display re-arms instead of wrapping forever.
+            # (or every pass under a wait loop) and the display re-arms
+            # instead of wrapping forever. The re-arm is deferred to the
+            # service tick so _advance_seq stays safe to call off-thread.
             self._run_passes += 1
-            if self._run_loops and self._run_passes >= self._run_loops:
-                self._end_run()
+            limit = (self._run_loops or 1) if self._loop_wait else self._run_loops
+            if limit and self._run_passes >= limit:
+                self._run_end_pending = True
                 return
         self._seq_pos = new_pos
         self._play_seq()
@@ -502,19 +510,26 @@ class StandbyController:
         self.prepared = False
         self._perform_deadline = None
         self._run_active = False
+        self._loop_wait = False
+        self._round_done = 0
+        self._run_end_pending = False
         self.content_pending = False
         if self.player.isPlaying():
             self.player.stop()
         self.request_content(0.5)
 
-    def prepare(self):
+    def prepare(self, loop_wait=None):
         """Stage the sequence at item 0 and hold: a video opens paused on
         its first frame (the monitor pauses it on AV start), an image is
         shown statically. tick() does not advance while prepared — 'go'
-        releases every staged display at once."""
+        releases every staged display at once. `loop_wait` arms the
+        wait-loop boundary: each pass end re-stages and waits for the
+        conductor's next perform instead of wrapping."""
         # A queued ambient restart (deferred request_content) must never
         # wipe a stage that landed after it — last write wins.
         self.content_pending = False
+        if loop_wait is not None:
+            self._loop_wait = bool(loop_wait)
         self.rescan_media()
         self.prepared = bool(self.sequence)
         if not self.prepared:
@@ -539,15 +554,26 @@ class StandbyController:
                 self.window.set_standby_image(item["path"])
         log(f"conductor prepare — staged {item['name']}")
 
-    def perform(self, at_mono=None):
+    def perform(self, at_mono=None, loop_wait=None):
         """Release the prepared sequence: resume a staged video or start the
         staged image's timer. With nothing staged it just restarts
         content. `at_mono` (display monotonic ms) defers the release to a
-        shared deadline so synced displays all start on the same instant."""
+        shared deadline so synced displays all start on the same instant.
+        `loop_wait` (re)arms the wait-loop boundary for the run."""
+        if loop_wait is not None:
+            self._loop_wait = bool(loop_wait)
         if at_mono is not None:
             delay_ms = at_mono - time.monotonic() * 1000
             if delay_ms > 0:
-                self._perform_deadline = time.monotonic() + delay_ms / 1000
+                deadline = time.monotonic() + delay_ms / 1000
+                # Earliest deadline wins — duplicate performs (catch-up,
+                # re-issue) must not starve a pending release by moving
+                # it later.
+                if (
+                    self._perform_deadline is None
+                    or deadline < self._perform_deadline
+                ):
+                    self._perform_deadline = deadline
                 log(f"conductor perform scheduled in {delay_ms:.0f}ms")
                 return
             # Deadline already passed — release immediately below.
@@ -602,6 +628,12 @@ class StandbyController:
                 new_pos = (self._pl_base + plpos) % len(self.sequence)
                 if self._run_active and new_pos < self._seq_pos:
                     self._run_passes += 1  # RepeatAll wrap inside the chain
+                    limit = (
+                        (self._run_loops or 1)
+                        if self._loop_wait else self._run_loops
+                    )
+                    if limit and self._run_passes >= limit:
+                        self._run_end_pending = True
                 self._seq_pos = new_pos
                 self._seq_started = time.perf_counter()
                 if plpos == pl.size() - 1:
@@ -1287,6 +1319,22 @@ def poll_loop(monitor, controller):
             # Content starts only once the standby window is resident (or the
             # deadline forces it) so video always opens over the standby screen.
             controller.start_content()
+
+        if controller._run_end_pending:
+            # A performed run hit its pass boundary — re-arm on the service
+            # thread (monitor callbacks and link commands stay off it).
+            # Under a wait loop the boundary is a conducted round end:
+            # count it and tell the conductor right away rather than
+            # waiting for the 5s status poll.
+            controller._run_end_pending = False
+            was_wait = controller._loop_wait
+            controller._end_run()
+            if was_wait:
+                controller._round_done += 1
+                log(f"wait-loop round {controller._round_done} done — re-armed")
+                link = getattr(controller, "_link", None)
+                if link is not None:
+                    link.push_status()
 
         controller.tick()
 
