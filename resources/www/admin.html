@@ -214,7 +214,7 @@
   <section id="page-settings" hidden>
     <h2>Settings</h2>
     <div class="panel">
-      <form id="settingsForm" onsubmit="return saveSettings()">
+      <form id="settingsForm" onsubmit="saveSettings(); return false">
         <label>Device name <input name="device_name"></label>
         <label>Media folder (empty = built-in) <input name="local_media_folder"></label>
         <div class="row">
