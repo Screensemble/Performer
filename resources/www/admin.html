@@ -167,6 +167,13 @@
     </div>
 
     <h2>Active items <small>play in order — drag to reorder</small></h2>
+    <div id="bulkBar" class="row" style="display:none;margin-bottom:8px">
+      <span id="bulkCount" class="muted"></span>
+      <button class="mini" onclick="bulkEnable(true)">Enable</button>
+      <button class="mini" onclick="bulkEnable(false)">Disable</button>
+      <button class="mini danger" onclick="bulkDelete()">Delete</button>
+      <button class="mini secondary" onclick="selClear()">Clear</button>
+    </div>
     <div id="activeList"><div class="empty">loading…</div></div>
 
     <h2>Inactive items <small>kept on the display but skipped</small></h2>
@@ -353,7 +360,9 @@ function rowHtml(i, draggable) {
   const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
   return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
       class="${i.enabled ? '' : 'inactive-row'}">` +
-    `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
+    `<td class="handle"><input type="checkbox" class="itemsel" ` +
+      `value="${escH(i.name)}" ${selSet.has(i.name) ? 'checked' : ''} ` +
+      `onchange="onItemSel(this)">${draggable ? ' ⋮⋮' : ''}</td>` +
     `<td>${thumbHtml(i)}</td>` +
     `<td class="cell-name"><b>${escH(i.name)}</b>${badges}` +
     `<div class="muted" style="font-size:12px">${i.kind}${i.w ? ` · ${i.w}×${i.h}` : ''}</div></td>` +
@@ -371,14 +380,71 @@ function rowHtml(i, draggable) {
 }
 
 function tableHtml(items, draggable) {
-  return '<table class="rstack"><thead><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+  return '<table class="rstack"><thead><tr>' +
+    '<th><input type="checkbox" title="select all" onclick="selAllIn(this)"></th>' +
+    '<th></th><th>Name</th><th class="num">Size</th>' +
     '<th class="num">Sec</th><th>On</th><th></th></tr></thead><tbody>' +
     items.map(i => rowHtml(i, draggable)).join('') + '</tbody></table>';
+}
+
+// Bulk selection — mirrors the conductor's display page.
+const selSet = new Set();
+function onItemSel(cb) {
+  cb.checked ? selSet.add(cb.value) : selSet.delete(cb.value);
+  updateBulkBar();
+}
+function selAllIn(cb) {
+  const on = cb.checked;
+  cb.closest('table').querySelectorAll('.itemsel').forEach(c => {
+    c.checked = on;
+    on ? selSet.add(c.value) : selSet.delete(c.value);
+  });
+  updateBulkBar();
+}
+function selClear() { selSet.clear(); renderMedia(); }
+function updateBulkBar() {
+  $('bulkBar').style.display = selSet.size ? '' : 'none';
+  $('bulkCount').textContent = selSet.size + ' selected';
+}
+async function bulkEnable(on) {
+  if (!selSet.size) return;
+  const total = selSet.size;
+  let ok = 0;
+  for (const n of selSet) {
+    const r = await api('/api/media/toggle', {
+      method: 'POST',
+      body: JSON.stringify({name: n, enabled: on}),
+    }).catch(() => ({error: 'unreachable'}));
+    if (r && !r.error) {
+      ok++;
+      const i = byName(n); if (i) i.enabled = on;
+    }
+  }
+  selClear();
+  const verb = on ? 'Enabled' : 'Disabled';
+  toast(ok === total ? `${verb} ${ok}` : `${verb} ${ok} of ${total}`);
+}
+async function bulkDelete() {
+  if (!selSet.size) return;
+  const total = selSet.size;
+  if (!confirm('Delete ' + total + ' selected item(s)?')) return;
+  let ok = 0;
+  for (const n of selSet) {
+    const r = await fetch('/api/media?name=' + encodeURIComponent(n),
+      {method: 'DELETE'}).catch(() => null);
+    if (r && r.ok) ok++;
+  }
+  selSet.clear();
+  toast(ok === total ? `Deleted ${ok}` : `Deleted ${ok} of ${total}`);
+  refresh();
 }
 
 function renderMedia() {
   const active = mediaItems.filter(i => i.enabled);
   const inactive = mediaItems.filter(i => !i.enabled);
+  const names = new Set(mediaItems.map(i => i.name));
+  for (const n of selSet) if (!names.has(n)) selSet.delete(n);
+  updateBulkBar();
   $('activeList').innerHTML = active.length
     ? tableHtml(active, true)
     : '<div class="empty">no active items — upload media or add a URL</div>';
