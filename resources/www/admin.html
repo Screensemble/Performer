@@ -39,6 +39,21 @@
     #activeList, #inactiveList { overflow-x: auto; }
     .row { flex-wrap: wrap; }
   }
+  @media (max-width: 640px) {
+    table.rstack thead { display: none; }
+    table.rstack, table.rstack tbody { display: block; width: 100%; }
+    table.rstack tr { display: block; padding: 8px 2px;
+      border-bottom: 2px solid var(--edge); }
+    table.rstack td { display: block; border: 0; padding: 3px 8px; }
+    table.rstack td[data-l]::before { content: attr(data-l) ": ";
+      color: var(--dim); font-size: 11px; text-transform: uppercase;
+      letter-spacing: .5px; }
+    table.rstack td.cell-name { font-weight: 600; font-size: 15px; }
+    table.rstack td.cell-acts { display: flex; flex-wrap: wrap; gap: 6px;
+      padding-top: 6px; }
+    table.rstack td.cell-acts button { flex: 1; min-width: 56px;
+      padding: 10px 6px; }
+  }
   h2 { margin: 26px 0 10px; font-size: 15px; color: var(--text); }
   h2 small { color: var(--dim); font-weight: 400; font-size: 12px; margin-left: 8px; }
   h2:first-child { margin-top: 0; }
@@ -97,6 +112,7 @@
   .sysgrid dt { color: var(--dim); }
   .sysgrid dd { margin: 0; }
 </style>
+<script src="/icons.js"></script>
 </head>
 <body>
 <header>
@@ -126,10 +142,10 @@
       <div id="rmState" class="muted">—</div>
       <div id="rmCurrent" style="font-size:18px;margin:6px 0 14px">—</div>
       <div class="row">
-        <button onclick="cmd('prev')" title="previous item">&#9198;</button>
-        <button id="rmPause" onclick="cmd('pause')" title="pause/resume">&#9208;</button>
-        <button onclick="cmd('next')" title="next item">&#9197;</button>
-        <button class="danger" onclick="cmd('stop')" title="stop to standby">&#9209;</button>
+        <button onclick="cmd('prev')" title="previous item" aria-label="previous item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg> Prev</button>
+        <button id="rmPause" onclick="cmd('pause')" title="pause/resume" aria-label="pause or resume"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14M16 5v14"/></svg> Pause</button>
+        <button onclick="cmd('next')" title="next item" aria-label="next item"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5v14M6 5l9 7-9 7z"/></svg> Next</button>
+        <button class="danger" onclick="cmd('stop')" title="stop to standby" aria-label="stop to standby"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10H7z"/></svg> Stop</button>
       </div>
     </div>
     <div class="panel">
@@ -313,6 +329,12 @@ function schedSummary(s) {
   return bits.join(' · ');
 }
 const byName = n => mediaItems.find(i => i.name === n);
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return Math.round(b / 1024) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
 const escH = s => String(s).replace(/[&<>"]/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const escJ = s => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -327,29 +349,29 @@ function rowHtml(i, draggable) {
     ? `<input class="dur" type="number" min="1" value="${i.duration || ''}" placeholder="10"
        title="seconds (empty = 10)" onchange="setDuration('${n}', this.value)">`
     : '—';
-  const sizeCell = i.size ? (i.size / 1048576).toFixed(1) + ' MB' : '—';
+  const sizeCell = i.size ? fmtBytes(i.size) : '—';
   const editRow = editName === i.name ? `<tr class="editrow"><td colspan="7">${editHtml(i)}</td></tr>` : '';
   return `<tr ${draggable ? 'draggable="true"' : ''} data-name="${escH(i.name)}"
       class="${i.enabled ? '' : 'inactive-row'}">` +
     `<td class="handle">${draggable ? '⋮⋮' : ''}</td>` +
     `<td>${thumbHtml(i)}</td>` +
-    `<td><b>${escH(i.name)}</b>${badges}` +
+    `<td class="cell-name"><b>${escH(i.name)}</b>${badges}` +
     `<div class="muted" style="font-size:12px">${i.kind}${i.w ? ` · ${i.w}×${i.h}` : ''}</div></td>` +
-    `<td class="num">${sizeCell}</td>` +
-    `<td class="num">${durCell}</td>` +
-    `<td><input type="checkbox" ${i.enabled ? 'checked' : ''}
+    `<td class="num" data-l="Size">${sizeCell}</td>` +
+    `<td class="num" data-l="Sec">${durCell}</td>` +
+    `<td data-l="On"><input type="checkbox" ${i.enabled ? 'checked' : ''}
       onchange="toggleItem('${n}', this.checked)"></td>` +
-    `<td class="num">` +
+    `<td class="num cell-acts">` +
     `<button class="mini secondary" title="play now" onclick="playItem('${n}')">▶</button> ` +
-    `<button class="mini secondary" title="edit" onclick="toggleEdit('${n}')">✎</button> ` +
+    `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit('${n}')">${ic("edit")}</button> ` +
     `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑</button> ` +
     `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓</button> ` +
-    `<button class="mini danger" title="delete" onclick="delItem('${n}')">✕</button></td></tr>` +
+    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")}</button></td></tr>` +
     editRow;
 }
 
 function tableHtml(items, draggable) {
-  return '<table><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+  return '<table class="rstack"><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
     '<th class="num">Sec</th><th>On</th><th></th></tr>' +
     items.map(i => rowHtml(i, draggable)).join('') + '</table>';
 }

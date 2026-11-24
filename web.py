@@ -537,6 +537,8 @@ def make_handler(controller, addon, on_settings_saved, state):
                     self._json({"error": "open this page via the on-screen QR code"}, 403)
                     return
                 self._static(os.path.join(WWW_DIR, "setup.html"), "text/html")
+            elif u.path == "/icons.js":
+                self._static(os.path.join(WWW_DIR, "icons.js"), "text/javascript")
             elif u.path in ("/favicon.ico", "/favicon.png", "/logo.png", "/wordmark.png"):
                 ctype = "image/x-icon" if u.path.endswith(".ico") else "image/png"
                 self._static(os.path.join(WWW_DIR, u.path.lstrip("/")), ctype)
