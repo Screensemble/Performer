@@ -1,7 +1,7 @@
 <addons>
 <addon id="script.screensemble"
        name="Screensemble Player"
-       version="0.3.15"
+       version="0.3.16"
        provider-name="Screensemble">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
