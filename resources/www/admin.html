@@ -362,18 +362,18 @@ function rowHtml(i, draggable) {
     `<td data-l="On"><input type="checkbox" ${i.enabled ? 'checked' : ''}
       onchange="toggleItem('${n}', this.checked)"></td>` +
     `<td class="num cell-acts">` +
-    `<button class="mini secondary" title="play now" onclick="playItem('${n}')">▶</button> ` +
-    `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit('${n}')">${ic("edit")}</button> ` +
-    `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑</button> ` +
-    `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓</button> ` +
-    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")}</button></td></tr>` +
+    `<button class="mini secondary" title="play now" onclick="playItem('${n}')">${ic("play")} Play</button> ` +
+    `<button class="mini secondary" title="edit" aria-label="edit" onclick="toggleEdit('${n}')">${ic("edit")} Edit</button> ` +
+    `<button class="mini secondary" title="move up" onclick="moveItem('${n}',-1)">↑ Up</button> ` +
+    `<button class="mini secondary" title="move down" onclick="moveItem('${n}',1)">↓ Down</button> ` +
+    `<button class="mini danger" title="delete" aria-label="delete" onclick="delItem('${n}')">${ic("x")} Remove</button></td></tr>` +
     editRow;
 }
 
 function tableHtml(items, draggable) {
-  return '<table class="rstack"><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
-    '<th class="num">Sec</th><th>On</th><th></th></tr>' +
-    items.map(i => rowHtml(i, draggable)).join('') + '</table>';
+  return '<table class="rstack"><thead><tr><th></th><th></th><th>Name</th><th class="num">Size</th>' +
+    '<th class="num">Sec</th><th>On</th><th></th></tr></thead><tbody>' +
+    items.map(i => rowHtml(i, draggable)).join('') + '</tbody></table>';
 }
 
 function renderMedia() {
