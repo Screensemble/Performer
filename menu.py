@@ -156,7 +156,10 @@ def list_root(update=False):
         _control_row("Addon settings", action="settings"),
     ]
     for li, url in rows:
-        xbmcplugin.addDirectoryItem(HANDLE, url, li, isFolder=True)
+        # Action rows, not real directories — non-folder items resolve via
+        # setResolvedUrl(False), so nothing lands on the directory stack
+        # to be re-run when the user presses Back.
+        xbmcplugin.addDirectoryItem(HANDLE, url, li, isFolder=False)
     xbmcplugin.endOfDirectory(HANDLE, updateListing=update)
 
 
@@ -441,13 +444,9 @@ def main():
         # The real playlist UI is the custom media window — this plugin
         # entry stays as the launch row + managed-mode status surface.
         xbmc.executebuiltin("RunScript(script.screensemble,media)")
-        list_root(update=True)
-        return
-    # Deep-link safety — no local playlist editing while managed.
-    if _managed() and action in {"item", "shuffle", "addfile", "addurl"}:
-        list_root(update=True)
-        return
-    if action == "item":
+    elif _managed() and action in {"item", "shuffle", "addfile", "addurl"}:
+        pass  # deep-link safety — no local playlist editing while managed
+    elif action == "item":
         item_menu(params["name"])
     elif action == "relaunch":
         from standby import relaunch_service
@@ -464,10 +463,12 @@ def main():
         _add_url()
     elif action == "settings":
         ADDON.openSettings()
-    # refresh and every action re-render the root in place — folder
-    # items must satisfy the directory contract, and updateListing keeps
-    # the user on the same screen instead of pushing a new level.
-    list_root(update=True)
+    # Every action ends the same way: resolve the non-folder item to
+    # nothing (no directory is ever pushed, so Back can't re-run this
+    # URL), then refresh the root listing in place.
+    if HANDLE != -1:
+        xbmcplugin.setResolvedUrl(HANDLE, False, xbmcgui.ListItem())
+    xbmc.executebuiltin("Container.Refresh")
 
 
 if __name__ == "__main__":

@@ -180,6 +180,8 @@ function skipPw() { state.local_password = ""; finish(); }
 // Files.GetSources/GetDirectory via /api/browse.
 let browseTarget = null, browsePath = "", browseStack = [], browseEntries = [];
 
+const v = id => { const el = $(id); return el ? el.value : undefined; };
+
 function pairNow() {
   const s = v("server_address").trim();
   const c = v("pair_code").trim();
@@ -235,7 +237,6 @@ function renderPicker(error) {
   $("picker").innerHTML = `<div class="picker">${h}</div>`;
 }
 function collect() {
-  const v = id => { const el = $(id); return el ? el.value : undefined; };
   if (state.player_mode === 0) {
   } else {
     state.server_address = v("server_address");
@@ -266,6 +267,16 @@ async function finish() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(state),
     });
+    if (r.status === 403) {
+      // The display paired (or otherwise finished setup) while this page
+      // was open — managed mode now refuses /api/setup, which *is* the
+      // finished state, just reached another way.
+      step = 3;
+      show();
+      $("desc").textContent =
+        "This display is already managed — setup finished another way.";
+      return;
+    }
     if (!r.ok) throw new Error(await r.text());
     step = 3; show();
   } catch (e) {

@@ -235,10 +235,14 @@ def make_handler(controller, addon, on_settings_saved, state):
 
         def _managed(self):
             """Paired to a server — the human-facing admin surface is off
-            until the link has been down long enough to matter."""
+            until the link has been down long enough to matter. A display
+            whose wizard finished in server mode but never paired has no
+            conductor credential and isn't managed: the local admin and the
+            /setup//pair flows must stay open or it can never enroll."""
             return (
                 controller.config.get("player_mode") == 1
                 and controller.config.get("setup_complete")
+                and bool(controller.config.get("server_auth_token"))
             )
 
         def _degraded(self):
@@ -282,7 +286,10 @@ def make_handler(controller, addon, on_settings_saved, state):
                 )
                 return True
             if self.command == "GET" and u.path in (
-                "/api/status", "/api/media", "/api/info"
+                "/api/status", "/api/media", "/api/info",
+                # Browser chrome on the managed notice — a blocked
+                # favicon/logo is only console noise, not a boundary.
+                "/favicon.ico", "/favicon.png", "/logo.png", "/wordmark.png",
             ):
                 return False
             if u.path == "/":

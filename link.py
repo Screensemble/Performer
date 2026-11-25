@@ -518,7 +518,10 @@ class ServerLink:
                 if not uname or not url.startswith(
                     ("http://", "https://", "rtsp://", "rtmp://")
                 ):
-                    raise ValueError("name and stream URL required")
+                    raise ValueError(
+                        "name required and URL must start with "
+                        "http(s)://, rtsp://, or rtmp://"
+                    )
                 for u in state["urls"]:
                     if u["name"] == uname:
                         u["url"] = url

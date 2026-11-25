@@ -455,6 +455,13 @@ class StandbyController:
             self._seq_playing = False
             if self.window_open:
                 self.window.set_standby_image(item["path"])
+            # A forced advance (Next/Prev, skip) can land on an image
+            # while a video still plays — the video window would stay on
+            # top forever. The image is already set beneath, so stopping
+            # the player reveals it without a black gap. The finish
+            # callback only flags the player; the tick owns advancing.
+            if self.player.isPlaying():
+                self.player.stop()
             self._slide_next = self._seq_started + self._seq_duration(item)
             log(f"seq {self._seq_pos + 1}/{len(self.sequence)} image: {item['name']}")
 
@@ -552,6 +559,11 @@ class StandbyController:
             self._seq_playing = False
             if self.window_open:
                 self.window.set_standby_image(item["path"])
+            # A video left over from the ambient run or a previous stage
+            # would sit fullscreen over the staged image forever — the
+            # release could never reveal it and the run never finish.
+            if self.player.isPlaying():
+                self.player.stop()
         log(f"conductor prepare — staged {item['name']}")
 
     def perform(self, at_mono=None, loop_wait=None):
@@ -1172,12 +1184,23 @@ def pair_prompt(controller, monitor):
         lines.append(str(info["info"]))
     lines.append(url)
     try:
+        opened = time.monotonic()
         ok = xbmcgui.Dialog().yesno(
             "Screensemble pairing",
             "\n".join(lines),
             nolabel="Cancel",
             yeslabel="Pair",
         )
+        # A decline inside ~1s can't be human — a queued input event hit
+        # the dialog as it drew. Re-ask once rather than drop the offer.
+        if not ok and time.monotonic() - opened < 1.0:
+            log("pair prompt dismissed instantly — re-asking")
+            ok = xbmcgui.Dialog().yesno(
+                "Screensemble pairing",
+                "\n".join(lines),
+                nolabel="Cancel",
+                yeslabel="Pair",
+            )
     except Exception as e:
         log(f"pair prompt failed: {e}")
         ok = False
@@ -1412,6 +1435,18 @@ def main():
         except Exception as e:
             log(f"splash failed: {e}")
 
+    # Fresh install: nothing else prompts the user, so a first boot would
+    # sit on Kodi Home forever. Open the setup wizard on the main thread —
+    # its first step is the QR page, and the web admin is already up by
+    # now, so phone setup works immediately. If the user backs out, the
+    # loop below stays hidden until the wizard is run from Programs.
+    if not controller.config["setup_complete"]:
+        try:
+            from wizard import run_wizard
+            run_wizard()
+        except Exception as e:
+            log(f"boot wizard failed: {e}")
+
     # Main thread: keep the standby window modally resident. doModal() blocks
     # until the window is closed (exit_to_kodi or shutdown), then we either
     # wait hidden (maintenance) or reopen.
@@ -1421,9 +1456,12 @@ def main():
             and not controller.maintenance
             and not controller.window_open
         ):
-            # Same settle as the maintenance branch — give the previous
-            # modal's teardown a GUI pump before doModal-ing the next one.
-            monitor.waitForAbort(0.5)
+            # Give the previous modal's teardown a few GUI pumps before
+            # doModal-ing the next one — 0.2s is enough for the splash's
+            # close to settle without leaving Kodi Home visibly exposed.
+            # (The maintenance branch keeps 0.5s: its in-flight standby
+            # teardown is heavier.)
+            monitor.waitForAbort(0.2)
             try:
                 controller.run_standby(monitor.abortRequested)
             except Exception as e:

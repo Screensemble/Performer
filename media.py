@@ -152,7 +152,12 @@ class MediaWindow(xbmcgui.WindowXML):
             disabled = name in state["disabled"]
             sched = state["schedules"].get(name)
             off = bool(sched) and not medialist.schedule_active(sched)
-            label = f"▶ {name}" if playing == name else name
+            # Now-playing marker — Kodi's default font has no ▶ glyph
+            # (renders as an empty box), so use a colored ASCII caret.
+            label = (
+                f"[COLOR FF3EC1F3]>[/COLOR] {name}"
+                if playing == name else name
+            )
             if disabled:
                 label = f"[COLOR FF6E8099]{label}[/COLOR]  (disabled)"
             elif off:

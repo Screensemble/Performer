@@ -318,7 +318,9 @@ class WizardWindow(xbmcgui.WindowXML):
                 cap.setHeight(140)
                 cap.setText(
                     "scan with your phone\nor open this address:\n"
-                    f"{self._setup_url}"
+                    # Textboxes can't break inside a token — put the query
+                    # on its own line so nothing clips off the sides.
+                    + self._setup_url.replace("?k=", "\n?k=")
                 )
                 desc.setPosition(900, 400)
                 desc.setWidth(470)

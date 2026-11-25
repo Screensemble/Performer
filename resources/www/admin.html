@@ -662,9 +662,13 @@ async function cmd(c) {
 async function upload() {
   const f = $('fileInput').files[0];
   if (!f) return toast('Pick a file first');
-  const r = await api('/api/upload?name=' + encodeURIComponent(f.name),
-                      {method: 'POST', body: f});
-  toast(r.error || ('Uploaded ' + f.name));
+  try {
+    const r = await api('/api/upload?name=' + encodeURIComponent(f.name),
+                        {method: 'POST', body: f});
+    toast(r.error || ('Uploaded ' + f.name));
+  } catch {
+    toast('Upload failed — check the connection.');
+  }
   refresh();
 }
 refresh(); loadSettings(); setInterval(refresh, 5000);
