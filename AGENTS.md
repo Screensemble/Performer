@@ -58,7 +58,7 @@ Kodi service addon that turns a device (e.g., Android TV box) into a Screensembl
 ## Conventions
 
 - The player core (idle renderer, cache, transitions, playback) must never depend on the server; server communication lives in `link.py`.
-- Never expose the Kodi home screen, playback controls, or Android UI during normal operation.
+- Never expose the Kodi home screen, playback controls, or Android UI during normal operation. (Exception: Kodi renders Home before service addons start, so a cold boot shows ~1s of Estuary — unavoidable, documented in the site docs under kiosk lockdown.)
 - Idle presentation shows at boot before any server connection; a managed display with no content holds a branded standby, never a blank.
 - Asset updates are atomic: download → verify (SHA-256) → stage (`.part`) → activate; never destroy a working presentation.
 - No video decoding, audio output, or UI animation while idle.

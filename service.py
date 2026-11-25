@@ -185,6 +185,7 @@ class StandbyController:
         self._seq_started = 0.0         # when the current item began
         self._previewing = False        # preview interrupted the sequence
         self._slide_next = 0.0
+        self._slide_due = 0.0           # claimed deadline handed to _play_seq
         self._seq_lock = threading.Lock()
         self._promo_files = []          # feature cards for empty playlists
         self._update_last = None        # date key of the last update check
@@ -359,6 +360,7 @@ class StandbyController:
         For videos the next image is already preloaded beneath, so the
         cut stays seamless."""
         self._pending_refresh = False
+        self._slide_due = 0.0
         self.rescan_media()
         if not self.sequence:
             self._seq_playing = False
@@ -476,7 +478,11 @@ class StandbyController:
             # still ahead), or an overrun a full slide behind.
             dur = self._seq_duration(item)
             now = time.perf_counter()
-            base = self._slide_next
+            # A claimed boundary arrives via _slide_due (the tick/timer
+            # already moved _slide_next out of the way); an unclaimed
+            # advance chains off the live deadline directly.
+            base = self._slide_due or self._slide_next
+            self._slide_due = 0.0
             if not base or base > now or base + dur <= now:
                 base = now
             self._slide_next = base + dur
@@ -515,6 +521,7 @@ class StandbyController:
         self._run_active = False
         self._seq_playing = False
         self._seq_ended_since = None
+        self._slide_due = 0.0
         if self.player.isPlaying():
             self.player.stop()
         log("run complete — re-armed")
@@ -672,9 +679,11 @@ class StandbyController:
         if not cur or cur["kind"] != "image" or self.player.playing:
             return
         with self._seq_lock:
-            if time.perf_counter() < self._slide_next:
+            due = self._slide_next
+            if time.perf_counter() < due:
                 return
             self._slide_next = float("inf")   # claimed — loser sees not-due
+            self._slide_due = due             # chained base for the next slide
         if self._pending_refresh:
             self._apply_pending_refresh(cur["name"])
         else:
@@ -711,6 +720,7 @@ class StandbyController:
                 time.perf_counter()
                 + self._seq_duration(self.sequence[self._seq_pos])
             )
+            self._slide_due = 0.0
             self._arm_slide_timer()
         log("conductor perform — sequence released")
 
@@ -776,6 +786,7 @@ class StandbyController:
         win.config = self._view_config()
         self.window = win
         self._slide_next = time.perf_counter() + DEFAULT_SLIDE_SECONDS
+        self._slide_due = 0.0
         self.window_open = True
         threading.Thread(
             target=self._watch_abort,
@@ -1051,6 +1062,7 @@ class StandbyController:
                     self._promo_files[self._promo_index]
                 )
                 self._slide_next = time.perf_counter() + PROMO_SECONDS
+                self._slide_due = 0.0
             return
         if self.prepared:
             return                      # conductor hold until "go"
@@ -1212,9 +1224,11 @@ class StandbyController:
             if self.window_open:
                 self.window.set_standby_image(path)
                 self._slide_next = time.perf_counter() + 60.0
+                self._slide_due = 0.0
                 log(f"preview image: {name}")
         else:
             self._slide_next = 0.0
+            self._slide_due = 0.0
             self.player.play(path)
             xbmc.executebuiltin("PlayerControl(RepeatOff)")
             log(f"preview video: {name}")
