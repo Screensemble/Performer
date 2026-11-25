@@ -185,6 +185,7 @@ class StandbyController:
         self._seq_started = 0.0         # when the current item began
         self._previewing = False        # preview interrupted the sequence
         self._slide_next = 0.0
+        self._seq_lock = threading.Lock()
         self._promo_files = []          # feature cards for empty playlists
         self._update_last = None        # date key of the last update check
         self._update_deferred = None    # date key of a deferred check (log once)
@@ -466,8 +467,20 @@ class StandbyController:
                 self.player.stop()
             # The slide starts at the reveal — stop() can block seconds
             # while the video tears down, and timing from _seq_started
-            # would show the image for a fraction of its duration.
-            self._slide_next = time.perf_counter() + self._seq_duration(item)
+            # would show the image for a fraction of its duration. When
+            # the previous item ended on schedule, chain off its deadline
+            # instead of "now": timing each slide from the tick that
+            # noticed it bakes poll lateness into every boundary and
+            # walks synced displays apart over a run. Rebase when there
+            # is no live schedule — fresh start, a forced skip (deadline
+            # still ahead), or an overrun a full slide behind.
+            dur = self._seq_duration(item)
+            now = time.perf_counter()
+            base = self._slide_next
+            if not base or base > now or base + dur <= now:
+                base = now
+            self._slide_next = base + dur
+            self._arm_slide_timer()
             log(f"seq {self._seq_pos + 1}/{len(self.sequence)} image: {item['name']}")
 
     def _advance_seq(self, delta=1):
@@ -623,6 +636,50 @@ class StandbyController:
             else:
                 self._perform_deadline = None
 
+    def _arm_slide_timer(self):
+        """Advance a timed image on a dedicated timer rather than the next
+        poll tick — tick lateness at every item boundary shows up as
+        drift between synced displays. The tick check stays as the
+        fallback when the timer loses the race or the deadline moved."""
+        delay = self._slide_next - time.perf_counter()
+        if not 0 < delay < 3600:
+            return
+        t = threading.Timer(delay, self._slide_fire)
+        t.daemon = True
+        t.start()
+
+    def _slide_fire(self):
+        # Mirror the tick's gates — states that hold the sequence there
+        # hold it here too.
+        if (
+            self._previewing
+            or self.maintenance
+            or self.prepared
+            or not self.window_open
+            or (self._sched_off and not self._run_active)
+        ):
+            return
+        self._tick_slide()
+
+    def _tick_slide(self):
+        """Advance when the current image's scheduled end has passed —
+        called by the poll tick and by the slide timer. The deadline is
+        claimed under the lock so only one caller performs the advance."""
+        cur = (
+            self.sequence[self._seq_pos]
+            if 0 <= self._seq_pos < len(self.sequence) else None
+        )
+        if not cur or cur["kind"] != "image" or self.player.playing:
+            return
+        with self._seq_lock:
+            if time.perf_counter() < self._slide_next:
+                return
+            self._slide_next = float("inf")   # claimed — loser sees not-due
+        if self._pending_refresh:
+            self._apply_pending_refresh(cur["name"])
+        else:
+            self._advance_seq()
+
     def _release(self):
         self._perform_deadline = None
         # A performed run counts passes — when loop_count hits, the run ends
@@ -654,6 +711,7 @@ class StandbyController:
                 time.perf_counter()
                 + self._seq_duration(self.sequence[self._seq_pos])
             )
+            self._arm_slide_timer()
         log("conductor perform — sequence released")
 
     def on_av_started(self):
@@ -1019,7 +1077,22 @@ class StandbyController:
                         pass
                 now = time.perf_counter()
                 if t is not None:
-                    if (
+                    try:
+                        total = self.player.getTotalTime()
+                    except RuntimeError:
+                        total = 0.0
+                    if total > 0 and t > total + 5.0:
+                        # Clock ran past the clip end with no end event —
+                        # a flaky audio device can freeze the player on
+                        # the last frame while the clock keeps reporting.
+                        log("video clock past clip end — skipping item")
+                        self._stall_since = None
+                        self._last_play_time = None
+                        try:
+                            self.player.stop()
+                        except Exception:
+                            pass
+                    elif (
                         self._last_play_time is not None
                         and abs(t - self._last_play_time) < 0.05
                     ):
@@ -1052,7 +1125,11 @@ class StandbyController:
                     and now - self._seq_started > 3.0
                 ):
                     self._seq_ended_since = None
-                    log("video never started or ended early — advancing")
+                    log(
+                        "video ended — advancing"
+                        if self._av_seen
+                        else "video never started — advancing"
+                    )
                     if self._pending_refresh:
                         self._apply_pending_refresh(
                             self.sequence[self._seq_pos]["name"]
@@ -1062,20 +1139,7 @@ class StandbyController:
                     else:
                         self._advance_seq()
             return
-        cur = (
-            self.sequence[self._seq_pos]
-            if 0 <= self._seq_pos < len(self.sequence) else None
-        )
-        if (
-            cur
-            and cur["kind"] == "image"
-            and not self.player.playing
-            and time.perf_counter() >= self._slide_next
-        ):
-            if self._pending_refresh:
-                self._apply_pending_refresh(cur["name"])
-            else:
-                self._advance_seq()
+        self._tick_slide()
 
     def slide_skip(self, direction):
         """D-pad manual skip: right/down = next, left/up = previous —
