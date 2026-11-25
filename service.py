@@ -430,6 +430,10 @@ class StandbyController:
         if item["kind"] == "video":
             self._seq_playing = True
             self._av_seen = False
+            # The claimed boundary was this item's start — consumed. A
+            # video's length isn't governed by _slide_next, so the due
+            # must not survive to be the next image's chain base.
+            self._slide_due = 0.0
             seq = self.sequence
             # Chain every consecutive video (wraparound-aware) into one
             # Kodi playlist — the player then transitions internally with
@@ -1239,15 +1243,19 @@ class StandbyController:
         A direct window.close() from a non-GUI thread wedges on Kodi's
         GUI bridge lock and takes every later xbmcgui call with it — so
         post back-presses instead; the standby window's own double-back
-        exit runs on the GUI thread. Three covers a fullscreen video —
-        the first back just leaves the player."""
-        if not (self.window_open or self.player.playing):
-            return
-
+        exit runs on the GUI thread. Presses keep coming until the exit
+        lands (bounded) — sent right after a stop, the early backs can
+        be absorbed by the item transition and leave the pair unmade."""
         def _post():
-            for _ in range(3):
+            deadline = time.perf_counter() + 6.0
+            for _ in range(8):
                 if self.maintenance:  # exit landed — don't back on Kodi UI
-                    break
+                    return
+                if time.perf_counter() >= deadline:
+                    return
+                if not (self.window_open or self.player.playing):
+                    time.sleep(0.3)   # surface mid-swap — wait it out
+                    continue
                 xbmc.executebuiltin("Action(back)")
                 time.sleep(0.6)
 
