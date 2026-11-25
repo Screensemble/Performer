@@ -988,7 +988,7 @@ def make_handler(controller, addon, on_settings_saved, state):
                 name = str(data.get("name", "")).strip()
                 url = str(data.get("url", "")).strip()
                 if not name or not url.startswith(("http://", "https://", "rtsp://", "rtmp://")):
-                    self._json({"error": "name and http(s)/rtsp URL required"}, 400)
+                    self._json({"error": "name and http(s), rtsp or rtmp URL required"}, 400)
                     return
                 ms = medialist.load_state()
                 for u in ms["urls"]:

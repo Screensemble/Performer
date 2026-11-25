@@ -177,6 +177,7 @@ class StandbyController:
         self.sequence = []              # interleaved play order (dicts)
         self._seq_pos = -1              # index into sequence
         self._seq_playing = False       # a sequence video is in flight
+        self._av_seen = False           # current video reached onAVStarted
         self._seq_ended_since = None    # sustained-silence detector
         self._last_play_time = None     # player clock, stall detection
         self._stall_since = None        # when the frozen clock began
@@ -425,6 +426,7 @@ class StandbyController:
         self._seq_started = time.perf_counter()
         if item["kind"] == "video":
             self._seq_playing = True
+            self._av_seen = False
             seq = self.sequence
             # Chain every consecutive video (wraparound-aware) into one
             # Kodi playlist — the player then transitions internally with
@@ -462,7 +464,10 @@ class StandbyController:
             # callback only flags the player; the tick owns advancing.
             if self.player.isPlaying():
                 self.player.stop()
-            self._slide_next = self._seq_started + self._seq_duration(item)
+            # The slide starts at the reveal — stop() can block seconds
+            # while the video tears down, and timing from _seq_started
+            # would show the image for a fraction of its duration.
+            self._slide_next = time.perf_counter() + self._seq_duration(item)
             log(f"seq {self._seq_pos + 1}/{len(self.sequence)} image: {item['name']}")
 
     def _advance_seq(self, delta=1):
@@ -587,9 +592,36 @@ class StandbyController:
                 ):
                     self._perform_deadline = deadline
                 log(f"conductor perform scheduled in {delay_ms:.0f}ms")
+                self._arm_deadline_timer()
                 return
             # Deadline already passed — release immediately below.
         self._release()
+
+    def _arm_deadline_timer(self):
+        """Release at the shared deadline on a dedicated timer — the poll
+        tick's cadence can add hundreds of ms of overshoot, which is the
+        skew a synced 'go' exists to avoid. The tick check stays as a
+        fallback if the timer is delayed."""
+        t = threading.Timer(
+            max(self._perform_deadline - time.monotonic(), 0.0),
+            self._deadline_fire,
+        )
+        t.daemon = True
+        t.start()
+
+    def _deadline_fire(self):
+        if (
+            self._perform_deadline
+            and time.monotonic() >= self._perform_deadline
+        ):
+            # A cancel/disarm cleared the deadline already, or a newer
+            # earlier timer won — either way this shot is spent.
+            if self.prepared:
+                self._perform_deadline = None
+                log("conductor perform — deadline reached")
+                self._release()
+            else:
+                self._perform_deadline = None
 
     def _release(self):
         self._perform_deadline = None
@@ -627,6 +659,7 @@ class StandbyController:
     def on_av_started(self):
         """Fired by the player monitor on AV start: an prepared video pauses
         on its first frame so 'go' is the only thing that moves it."""
+        self._av_seen = True
         if self._prepare_pending:
             self._prepare_pending = False
             self.player.pause()
@@ -713,6 +746,17 @@ class StandbyController:
 
     def _view_config(self):
         cfg = dict(self.config)
+        if (
+            cfg.get("player_mode") == 1
+            and cfg.get("setup_complete")
+            and not cfg.get("server_auth_token")
+        ):
+            # Server mode finished but never paired — the installer needs
+            # a hint on the standby or the display just sits branded.
+            cfg["unpaired_hint"] = (
+                "Not paired — open the Pair page on the conductor "
+                "to enroll this display"
+            )
         cur = (
             self.sequence[self._seq_pos]
             if 0 <= self._seq_pos < len(self.sequence) else None
@@ -993,13 +1037,22 @@ class StandbyController:
                     self._last_play_time = t
             else:
                 now = time.perf_counter()
-                if self._seq_ended_since is None:
+                if (
+                    self._av_seen is False
+                    and now - self._seq_started <= 15.0
+                ):
+                    # Still opening — a slow decoder can take many seconds
+                    # before AV starts; that's not silence. Past ~15s the
+                    # open has failed and the normal silence rule fires.
+                    self._seq_ended_since = None
+                elif self._seq_ended_since is None:
                     self._seq_ended_since = now
                 elif (
                     now - self._seq_ended_since > 2.0
                     and now - self._seq_started > 3.0
                 ):
                     self._seq_ended_since = None
+                    log("video never started or ended early — advancing")
                     if self._pending_refresh:
                         self._apply_pending_refresh(
                             self.sequence[self._seq_pos]["name"]
@@ -1142,6 +1195,9 @@ class StandbyController:
         self.maintenance = True
         self._maint_since = time.perf_counter()
         self._maint_ui_dismissed = False
+        link = getattr(self, "_link", None)
+        if link is not None:
+            link.push_status()   # the fleet button shouldn't lag a poll cycle
         self.close_standby()  # run_standby()'s doModal() returns, window drops
         log("exited to Kodi UI — resume via Programs > Screensemble")
         notify("Standby exited. Resume from Programs > Screensemble")
@@ -1150,6 +1206,9 @@ class StandbyController:
         self.maintenance = False
         self._maint_since = 0.0
         self._maint_ui_dismissed = False
+        link = getattr(self, "_link", None)
+        if link is not None:
+            link.push_status()
         self._offline_since = None   # managed link down since (degraded admin)
         self.content_pending = False
         self.rescan_media()

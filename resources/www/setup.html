@@ -239,9 +239,13 @@ function renderPicker(error) {
 function collect() {
   if (state.player_mode === 0) {
   } else {
-    state.server_address = v("server_address");
-    state.device_name = v("device_name");
-    state.server_media_dir = v("server_media_dir");
+    // Step-2 inputs are gone from the DOM once the user reaches step 3 —
+    // only overwrite fields that still exist, or a late collect() wipes
+    // the values and finish() can never succeed in server mode.
+    for (const k of ["server_address", "device_name", "server_media_dir"]) {
+      const x = v(k);
+      if (x !== undefined) state[k] = x;
+    }
   }
   if (step === 2) {
     const pw = v("local_password");

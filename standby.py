@@ -321,4 +321,8 @@ class StandbyWindow(xbmcgui.WindowXML):
                 hex_to_colordiffuse(cfg["idle_color"])
             )
 
-        self.getControl(CONTROL_DEBUG_LABEL).setVisible(False)
+        lab = self.getControl(CONTROL_DEBUG_LABEL)
+        hint = cfg.get("unpaired_hint")
+        if hint:
+            lab.setLabel(hint)
+        lab.setVisible(bool(hint))
